@@ -7,11 +7,19 @@ macro_rules! grammar {
         grammar!(@rules $grammar, $($tail)*)
     );
 
-    ( @rhs $grammar:ident, $lhs:ident, ) => ();
+    ( @rhs $grammar:ident, $lhs:ident, ) => (
+        $grammar.add_rule($lhs, vec![]);
+    );
 
     ( @rhs $grammar:ident, $lhs:ident, $($symbol:ident)* $( | $($tail:tt)* )? ) => (
         $grammar.add_rule($lhs, vec![ $(Symbol::new($symbol)),* ]);
-        grammar!(@rhs $grammar, $lhs, $( $($tail)* )?)
+        grammar!(@rhs_tail $grammar, $lhs, $(| $($tail)*)?)
+    );
+
+    ( @rhs_tail $grammar:ident, $lhs:ident, ) => ();
+
+    ( @rhs_tail $grammar:ident, $lhs:ident, | $( $tail:tt )* ) => (
+        $grammar!(@rhs $grammar, $lhs, $($tail)*)
     );
 
     ( $name:ident, $Token:path,
@@ -20,14 +28,15 @@ macro_rules! grammar {
         mod $name {
             use std::collections::HashMap;
 
+            #[derive(Debug)]
             #[derive(PartialEq)]
             #[derive(Eq)]
             #[derive(Hash)]
-            enum NonTerminal {
+            pub enum NonTerminal {
                 $($lhs),*
             }
 
-            enum Symbol{
+            pub enum Symbol{
                 Terminal($Token),
                 NonTerminal(NonTerminal),
             }
@@ -47,10 +56,20 @@ macro_rules! grammar {
                 }
             }
 
-            type ProdRule = Vec<Symbol>;
+            pub struct Rule(Vec<Symbol>);
+
+            impl Rule {
+                pub fn iter(&self) -> impl Iterator<Item=&Symbol> {
+                    self.0.iter()
+                }
+
+                pub fn len(&self) -> usize {
+                    self.0.len()
+                }
+            }
 
             pub struct Grammar {
-                rules: HashMap<NonTerminal, Vec<ProdRule>>,
+                rules: HashMap<NonTerminal, Vec<Rule>>,
             }
 
             impl Grammar {
@@ -60,14 +79,24 @@ macro_rules! grammar {
 
                 fn add_rule(&mut self, lhs: NonTerminal, rhs: Vec<Symbol>) {
                     let prod_rules = self.rules.entry(lhs).or_insert(Vec::new());
-                    prod_rules.push(rhs);
+                    prod_rules.push(Rule(rhs));
+                }
+
+                pub fn iter_rhs<T>(&self, lhs: &NonTerminal)
+                -> Option<impl Iterator<Item=&Rule>>
+                {
+                    self.rules.get(lhs).map(|vec| vec.iter())
+                }
+
+                pub fn iter_lhs(&self) -> impl Iterator<Item=&NonTerminal> {
+                    self.rules.keys()
                 }
             }
 
             use $Token::*;
             use NonTerminal::*;
 
-            fn get_grammar() -> Grammar {
+            pub fn get_grammar() -> Grammar {
                 let mut grammar = Grammar::new();
                 grammar!(@rules grammar, $( $lhs = $rhs )*);
                 grammar
@@ -77,27 +106,31 @@ macro_rules! grammar {
     )
 }
 
-
-enum Tok {
-    NUM, PLUS, MINUS,
-}
-
-grammar!(Name, crate::Tok,
-         stmt = [expr | ]
-         expr = [NUM | expr PLUS expr | expr MINUS expr]
-);
-
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::collections::HashSet;
+    use std::iter::FromIterator;
 
-    struct Tok;
-    grammar!(Name, crate::tests::Tok, a = b;);
+    enum Tok {
+        NUM, PLUS, MINUS,
+    }
+
+    grammar!(TestGrammar, crate::tests::Tok,
+             empty = []
+             stmt = [expr | ]
+             expr = [NUM | expr PLUS expr | expr MINUS expr]
+    );
 
     #[test]
     fn it_works() {
-        let (a, b) = (1, 2);
-        grammar_rules!(a = b; b = a;);
-        assert_eq!(2 + 2, 4);
+        use crate::tests::TestGrammar::*;
+
+        let grammar = get_grammar();
+
+        let non_terminals: HashSet<&NonTerminal> =
+            HashSet::from_iter(grammar.iter_lhs());
+        assert!(non_terminals.get(&NonTerminal::empty).is_some());
+        assert!(non_terminals.get(&NonTerminal::stmt).is_some());
+        assert!(non_terminals.get(&NonTerminal::expr).is_some());
     }
 }
