@@ -22,12 +22,10 @@ macro_rules! grammar {
         $grammar!(@rhs $grammar, $lhs, $($tail)*)
     );
 
-    ( $name:ident, $Token:path,
+    ( $name:ident <$Token:path>:
       $( $lhs:ident = $rhs:tt )* ) => (
 
         mod $name {
-            use std::collections::HashMap;
-
             #[derive(Debug)]
             #[derive(PartialEq)]
             #[derive(Eq)]
@@ -73,12 +71,12 @@ macro_rules! grammar {
             }
 
             pub struct Grammar {
-                rules: HashMap<NonTerminal, Vec<Rule>>,
+                rules: std::collections::HashMap<NonTerminal, Vec<Rule>>,
             }
 
             impl Grammar {
                 fn new() -> Self {
-                    Grammar { rules: HashMap::new() }
+                    Grammar { rules: std::collections::HashMap::new() }
                 }
 
                 fn add_rule(&mut self, lhs: NonTerminal, rhs: Vec<Symbol>) {
@@ -122,9 +120,9 @@ mod tests {
         NUM, PLUS, MINUS,
     }
 
-    grammar!(EmptyGrammar, crate::tests::Tok,);
+    grammar!(EmptyGrammar <crate::tests::Tok>:);
 
-    grammar!(TestGrammar, crate::tests::Tok,
+    grammar!(TestGrammar <crate::tests::Tok>:
              empty = []
              stmt = [expr | ]
              expr = [NUM | expr PLUS expr | expr MINUS expr]
