@@ -1,14 +1,21 @@
 macro_rules! grammar {
     ( @rules $grammar:ident, ) => ();
 
-    ( @rules $grammar:ident, $lhs:ident = [ $($rhs:ident)* ];
+    ( @rules $grammar:ident, $lhs:ident = [ $($rhs:tt)* ]
       $( $tail:tt )* ) => (
-        $grammar.add_rule($lhs, vec![ $(Symbol::new($rhs)),* ]);
+        $grammar!(@rhs $grammar, $lhs, $($rhs)*);
         grammar!(@rules $grammar, $($tail)*)
     );
 
+    ( @rhs $grammar:ident, $lhs:ident, ) => ();
+
+    ( @rhs $grammar:ident, $lhs:ident, $($symbol:ident)* $( | $($tail:tt)* )? ) => (
+        $grammar.add_rule($lhs, vec![ $(Symbol::new($symbol)),* ]);
+        grammar!(@rhs $grammar, $lhs, $( $($tail)* )?)
+    );
+
     ( $name:ident, $Token:path,
-      $( $lhs:ident = $rhs:tt; )* ) => (
+      $( $lhs:ident = $rhs:tt )* ) => (
 
         mod $name {
             use std::collections::HashMap;
@@ -25,8 +32,6 @@ macro_rules! grammar {
                 NonTerminal(NonTerminal),
             }
 
-            struct Rule(Vec<Symbol>);
-
             trait mk_symbol<T> {
                 fn new(arg: T) -> Self;
             }
@@ -42,8 +47,10 @@ macro_rules! grammar {
                 }
             }
 
+            type ProdRule = Vec<Symbol>;
+
             pub struct Grammar {
-                rules: HashMap<NonTerminal, Rule>,
+                rules: HashMap<NonTerminal, Vec<ProdRule>>,
             }
 
             impl Grammar {
@@ -52,7 +59,8 @@ macro_rules! grammar {
                 }
 
                 fn add_rule(&mut self, lhs: NonTerminal, rhs: Vec<Symbol>) {
-                    self.rules.insert(lhs, Rule(rhs));
+                    let prod_rules = self.rules.entry(lhs).or_insert(Vec::new());
+                    prod_rules.push(rhs);
                 }
             }
 
@@ -61,7 +69,7 @@ macro_rules! grammar {
 
             fn get_grammar() -> Grammar {
                 let mut grammar = Grammar::new();
-                grammar!(@rules grammar, $( $lhs = $rhs; )*);
+                grammar!(@rules grammar, $( $lhs = $rhs )*);
                 grammar
             }
 
@@ -69,11 +77,15 @@ macro_rules! grammar {
     )
 }
 
+
 enum Tok {
-    A, B
+    NUM, PLUS, MINUS,
 }
 
-grammar!(Name, crate::Tok, a = [A B];);
+grammar!(Name, crate::Tok,
+         stmt = [expr | ]
+         expr = [NUM | expr PLUS expr | expr MINUS expr]
+);
 
 #[cfg(test)]
 mod tests {
