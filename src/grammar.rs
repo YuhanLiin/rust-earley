@@ -1,3 +1,26 @@
+pub trait Rule<'a> {
+    type Symbol: 'a;
+    type SymIter: Iterator<Item=&'a Self::Symbol>;
+
+    fn iter(&'a self) -> Self::SymIter;
+
+    fn len(&'a self) -> usize;
+
+    fn symbol(&'a self, i: usize) -> &Self::Symbol; 
+}
+
+pub trait Grammar<'a> {
+    type NonTerminal: 'a;
+    type NonTermIter: Iterator<Item=&'a Self::NonTerminal>;
+    type Rule: 'a;
+    type RuleIter: Iterator<Item=&'a Self::Rule>;
+
+    fn get_iter_rhs(&'a self, lhs: &Self::NonTerminal) -> Self::RuleIter;
+
+    fn iter_lhs(&'a self) -> Self::NonTermIter; 
+}
+
+#[macro_export]
 macro_rules! grammar {
     ( @rules $grammar:ident, ) => ();
 
@@ -27,31 +50,28 @@ macro_rules! grammar {
 
         mod $name {
             #[derive(Debug)]
-            #[derive(PartialEq)]
-            #[derive(Eq)]
-            #[derive(Hash)]
+            #[derive(Hash, PartialEq, Eq)]
             pub enum NonTerminal {
                 $($lhs),*
             }
 
             #[derive(Debug)]
-            #[derive(PartialEq)]
-            #[derive(Eq)]
+            #[derive(PartialEq, Eq)]
             pub enum Symbol{
                 Terminal($Token),
                 NonTerminal(NonTerminal),
             }
 
-            trait mk_symbol<T> {
+            trait MakeSymbol<T> {
                 fn new(arg: T) -> Self;
             }
 
-            impl mk_symbol<NonTerminal> for Symbol {
+            impl MakeSymbol<NonTerminal> for Symbol {
                 fn new(arg: NonTerminal) -> Self {
                     Symbol::NonTerminal(arg)
                 }
             }
-            impl mk_symbol<$Token> for Symbol {
+            impl MakeSymbol<$Token> for Symbol {
                 fn new(arg: $Token) -> Self {
                     Symbol::Terminal(arg)
                 }
@@ -59,15 +79,17 @@ macro_rules! grammar {
 
             pub struct Rule(Vec<Symbol>);
 
-            impl Rule {
-                pub fn iter(&self) -> impl Iterator<Item=&Symbol> {
+            impl<'a> $crate::grammar::Rule<'a> for Rule {
+                type Symbol = Symbol;
+                type SymIter = std::slice::Iter<'a, Symbol>;
+
+                fn iter(&'a self) -> Self::SymIter {
                     self.0.iter()
                 }
 
-                pub fn len(&self) -> usize { self.0.len() }
+                fn len(&self) -> usize { self.0.len() }
 
-
-                pub fn symbol(&self, i: usize) -> &Symbol { &self.0[i] }
+                fn symbol(&self, i: usize) -> &Symbol { &self.0[i] }
             }
 
             pub struct Grammar {
@@ -83,14 +105,22 @@ macro_rules! grammar {
                     let prod_rules = self.rules.entry(lhs).or_insert(Vec::new());
                     prod_rules.push(Rule(rhs));
                 }
+            }
 
-                pub fn get_iter_rhs(&self, lhs: &NonTerminal)
-                -> impl Iterator<Item=&Rule>
+            impl<'a> $crate::grammar::Grammar<'a> for Grammar {
+                type NonTerminal = NonTerminal;
+                type NonTermIter =
+                    std::collections::hash_map::Keys<'a, NonTerminal, Vec<Rule>>;
+                type Rule = Rule;
+                type RuleIter = std::slice::Iter<'a, Rule>;
+
+                fn get_iter_rhs(&'a self, lhs: &Self::NonTerminal) 
+                -> Self::RuleIter
                 {
                     self.rules.get(lhs).map(|vec| vec.iter()).unwrap()
                 }
 
-                pub fn iter_lhs(&self) -> impl Iterator<Item=&NonTerminal> {
+                fn iter_lhs(&'a self) -> Self::NonTermIter {
                     self.rules.keys()
                 }
             }
@@ -108,10 +138,18 @@ macro_rules! grammar {
     )
 }
 
+#[derive(PartialEq, Eq, Debug)]
+enum Tok {
+    NUM, PLUS, MINUS,
+}
+
+grammar!(MyGrammar <crate::grammar::Tok>:);
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
     use std::iter::FromIterator;
+    use super::*;
 
     #[derive(Debug)]
     #[derive(PartialEq)]
@@ -120,9 +158,9 @@ mod tests {
         NUM, PLUS, MINUS,
     }
 
-    grammar!(EmptyGrammar <crate::tests::Tok>:);
+    grammar!(EmptyGrammar <crate::grammar::tests::Tok>:);
 
-    grammar!(TestGrammar <crate::tests::Tok>:
+    grammar!(TestGrammar <crate::grammar::tests::Tok>:
              empty = []
              stmt = [expr | ]
              expr = [NUM | expr PLUS expr | expr MINUS expr]
@@ -130,7 +168,7 @@ mod tests {
 
     #[test]
     fn empty() {
-        use crate::tests::EmptyGrammar::*;
+        use EmptyGrammar::*;
 
         let grammar = get_grammar();
 
@@ -139,7 +177,7 @@ mod tests {
 
     #[test]
     fn grammar() {
-        use crate::tests::TestGrammar::*;
+        use TestGrammar::*;
 
         let grammar = get_grammar();
 
