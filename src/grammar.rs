@@ -25,7 +25,11 @@ pub trait Symbol {
     type Terminal;
 
     fn terminal(&self) -> Option<&Self::Terminal>;
+
     fn nonterminal(&self) -> Option<&Self::NonTerminal>;
+
+    fn call_match<FN, FT>(&self, nt_handler: FN, t_handler: FT)
+    where FN: FnOnce(&Self::NonTerminal), FT: FnOnce(&Self::Terminal);
 }
 
 #[macro_export]
@@ -84,6 +88,15 @@ macro_rules! grammar {
                     if let Symbol::NonTerminal(t) = self {
                         Some(&t)
                     } else { None }
+                }
+
+                fn call_match<FN, FT>(&self, nt_handler: FN, t_handler: FT)
+                where FN: FnOnce(&Self::NonTerminal), FT: FnOnce(&Self::Terminal)
+                {
+                    match self {
+                        Symbol::Terminal(t) => t_handler(t),
+                        Symbol::NonTerminal(nt) => nt_handler(nt),
+                    }
                 }
             }
 
