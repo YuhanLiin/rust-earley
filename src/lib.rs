@@ -15,7 +15,7 @@ where R: Rule<'a, Symbol=S>, S: 'a
         Item { lhs, rule, from, dot: 0 }
     }
 
-    fn dot_symbol(&self) -> &'a S {
+    fn dot_symbol(&self) -> Option<&'a S> {
         self.rule.symbol(self.dot)
     }
 
@@ -79,14 +79,23 @@ where R: Rule<'a, Symbol=S>,
         let mut temp = Vec::new();
         let from = item.from;
         for old_item in self.get_set(from) {
-            if let Some(nt) = old_item.dot_symbol().nonterminal() {
-                if nt == item.lhs {
-                    temp.push(old_item.advance());
+            if let Some(sym) = old_item.dot_symbol() {
+                if let Some(nt) = sym.nonterminal() {
+                    if nt == item.lhs {
+                        temp.push(old_item.advance());
+                    }
                 }
             }
         }
         for item in temp {
             self.get_set_or_add(self.progress + 1).push(item);
         }
+    }
+
+    fn parse_token(&mut self, token: T) {
+        for item in self.get_set(self.progress) {
+        }
+        self.progress += 1;
+
     }
 }

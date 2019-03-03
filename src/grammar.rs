@@ -6,7 +6,7 @@ pub trait Rule<'a> {
 
     fn len(&'a self) -> usize;
 
-    fn symbol(&'a self, i: usize) -> &Self::Symbol; 
+    fn symbol(&'a self, i: usize) -> Option<&Self::Symbol>;
 }
 
 pub trait Grammar<'a> {
@@ -17,7 +17,7 @@ pub trait Grammar<'a> {
 
     fn get_iter_rhs(&'a self, lhs: &Self::NonTerminal) -> Self::RuleIter;
 
-    fn iter_lhs(&'a self) -> Self::NonTermIter; 
+    fn iter_lhs(&'a self) -> Self::NonTermIter;
 }
 
 pub trait Symbol {
@@ -115,7 +115,7 @@ macro_rules! grammar {
 
                 fn len(&self) -> usize { self.0.len() }
 
-                fn symbol(&self, i: usize) -> &Symbol { &self.0[i] }
+                fn symbol(&self, i: usize) -> Option<&Symbol> { self.0.get(i) }
             }
 
             pub struct Grammar {
@@ -140,7 +140,7 @@ macro_rules! grammar {
                 type Rule = Rule;
                 type RuleIter = std::slice::Iter<'a, Rule>;
 
-                fn get_iter_rhs(&'a self, lhs: &Self::NonTerminal) 
+                fn get_iter_rhs(&'a self, lhs: &Self::NonTerminal)
                 -> Self::RuleIter
                 {
                     self.rules.get(lhs).map(|vec| vec.iter()).unwrap()
@@ -212,7 +212,10 @@ mod tests {
             Vec::from_iter(grammar.get_iter_rhs(&NonTerminal::stmt));
         assert_eq!(rules.len(), 2);
         assert_eq!(rules[0].len(), 1);
-        assert_eq!(rules[0].symbol(0), &Symbol::NonTerminal(NonTerminal::expr));
+        assert_eq!(
+            rules[0].symbol(0).unwrap(),
+            &Symbol::NonTerminal(NonTerminal::expr)
+        );
         assert_eq!(rules[1].len(), 0);
 
         let rules =
