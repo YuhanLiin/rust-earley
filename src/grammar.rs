@@ -20,6 +20,14 @@ pub trait Grammar<'a> {
     fn iter_lhs(&'a self) -> Self::NonTermIter; 
 }
 
+pub trait Symbol {
+    type NonTerminal;
+    type Terminal;
+
+    fn terminal(&self) -> Option<&Self::Terminal>;
+    fn nonterminal(&self) -> Option<&Self::NonTerminal>;
+}
+
 #[macro_export]
 macro_rules! grammar {
     ( @rules $grammar:ident, ) => ();
@@ -62,10 +70,28 @@ macro_rules! grammar {
                 NonTerminal(NonTerminal),
             }
 
+            impl $crate::grammar::Symbol for Symbol {
+                type Terminal = $Token;
+                type NonTerminal = NonTerminal;
+
+                fn terminal(&self) -> Option<&Self::Terminal> {
+                    if let Symbol::Terminal(t) = self {
+                        Some(&t)
+                    } else { None }
+                }
+
+                fn nonterminal(&self) -> Option<&Self::NonTerminal> {
+                    if let Symbol::NonTerminal(t) = self {
+                        Some(&t)
+                    } else { None }
+                }
+            }
+
             trait MakeSymbol<T> {
                 fn new(arg: T) -> Self;
             }
 
+            // Allows static dispatch on new()
             impl MakeSymbol<NonTerminal> for Symbol {
                 fn new(arg: NonTerminal) -> Self {
                     Symbol::NonTerminal(arg)
@@ -138,13 +164,6 @@ macro_rules! grammar {
     )
 }
 
-#[derive(PartialEq, Eq, Debug)]
-enum Tok {
-    NUM, PLUS, MINUS,
-}
-
-grammar!(MyGrammar <crate::grammar::Tok>:);
-
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
@@ -154,7 +173,7 @@ mod tests {
     #[derive(Debug)]
     #[derive(PartialEq)]
     #[derive(Eq)]
-    enum Tok {
+    pub enum Tok {
         NUM, PLUS, MINUS,
     }
 
