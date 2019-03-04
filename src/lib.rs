@@ -150,7 +150,8 @@ where R: Rule<'a, Symbol=S>,
             self.predict(self.start_symbol, &mut has_predicted);
         }
 
-        for i in 0..self.chart.get(self.progress).len() {
+        let mut i = 0;
+        while i < self.chart.get(self.progress).len() {
             let item: gen!(Item) = self.chart.get(self.progress).get(i).clone();
 
             if let Some(symbol) = item.dot_symbol() {
@@ -165,6 +166,7 @@ where R: Rule<'a, Symbol=S>,
             } else {
                 self.complete(&item);
             }
+            i += 1;
         }
 
         if next_set.len() == 0 {
@@ -222,5 +224,6 @@ mod tests{
         assert!(parser.parse_token(&Tok::NUM).is_ok());
         assert!(parser.parse_token(&Tok::PLUS).is_ok());
         assert!(parser.parse_token(&Tok::NUM).is_ok());
+        assert!(parser.finish_parse().is_ok());
     }
 }
