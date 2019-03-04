@@ -18,6 +18,8 @@ pub trait Grammar<'a> {
     fn get_iter_rhs(&'a self, lhs: &Self::NonTerminal) -> Self::RuleIter;
 
     fn iter_lhs(&'a self) -> Self::NonTermIter;
+
+    fn is_nullable(&'a self, non_term: &Self::NonTerminal) -> bool; 
 }
 
 pub trait Symbol {
@@ -30,6 +32,12 @@ pub trait Symbol {
 
     fn call_match<FN, FT>(&self, nt_handler: FN, t_handler: FT)
     where FN: FnOnce(&Self::NonTerminal), FT: FnOnce(&Self::Terminal);
+}
+
+pub trait NonTerminal {
+    const count: usize;
+
+    fn to_usize(&self) -> usize;
 }
 
 #[macro_export]
@@ -62,9 +70,20 @@ macro_rules! grammar {
 
         mod $name {
             #[derive(Debug)]
-            #[derive(Hash, PartialEq, Eq)]
+            #[derive(Hash, PartialEq, Eq, Clone, Copy)]
             pub enum NonTerminal {
-                $($lhs),*
+                $($lhs,)*
+                __NonTerminalEnd,
+            }
+
+            const NT_COUNT: usize = __NonTerminalEnd as usize;
+
+            impl $crate::grammar::NonTerminal for NonTerminal {
+                const count: usize = NT_COUNT;
+
+                fn to_usize(&self) -> usize {
+                    *self as usize
+                }
             }
 
             #[derive(Debug)]
@@ -133,11 +152,15 @@ macro_rules! grammar {
 
             pub struct Grammar {
                 rules: std::collections::HashMap<NonTerminal, Vec<Rule>>,
+                nullable: [bool; NT_COUNT],
             }
 
             impl Grammar {
                 fn new() -> Self {
-                    Grammar { rules: std::collections::HashMap::new() }
+                    Grammar {
+                        rules: std::collections::HashMap::new(),
+                        nullable: [false; NT_COUNT],
+                    }
                 }
 
                 fn add_rule(&mut self, lhs: NonTerminal, rhs: Vec<Symbol>) {
@@ -161,6 +184,10 @@ macro_rules! grammar {
 
                 fn iter_lhs(&'a self) -> Self::NonTermIter {
                     self.rules.keys()
+                }
+
+                fn is_nullable(&'a self, non_term: &Self::NonTerminal) -> bool {
+                    false
                 }
             }
 

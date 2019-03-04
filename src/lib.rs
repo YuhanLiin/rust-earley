@@ -1,3 +1,4 @@
+#[macro_use]
 mod grammar;
 use grammar::*;
 
@@ -101,9 +102,10 @@ impl<'a, G, S: 'a, R, NT: 'a, T> Parser<'a, G, S, R, NT>
 where R: Rule<'a, Symbol=S>,
       G: Grammar<'a, NonTerminal=NT, Rule=R>,
       S: Symbol<Terminal=T, NonTerminal=NT>,
-      NT: Eq + Copy + Hash, T: Eq + Copy
+      NT: Eq + Copy + Hash + NonTerminal,
+      T: Eq + Copy,
 {
-    fn new(grammar: &'a G, start_symbol: NT) -> Self {
+    pub fn new(grammar: &'a G, start_symbol: NT) -> Self {
         let mut parser =
             Self { chart: Chart::new(), grammar, progress: 0, start_symbol };
         parser.chart.push(StateSet::new());
@@ -174,7 +176,7 @@ where R: Rule<'a, Symbol=S>,
         }
     }
 
-    fn parse_token(&mut self, token: &T) -> Result<(), IncompleteParseError<T>> {
+    pub fn parse_token(&mut self, token: &T) -> Result<(), IncompleteParseError<T>> {
         if self.parse_set(Some(token)) {
             Ok(())
         } else {
@@ -182,7 +184,7 @@ where R: Rule<'a, Symbol=S>,
         }
     }
 
-    fn finish_parse(&mut self) -> Result<(), ParseEndError> {
+    pub fn finish_parse(&mut self) -> Result<(), ParseEndError> {
         let continued = self.parse_set(None);
         assert!(!continued);
 
@@ -193,5 +195,32 @@ where R: Rule<'a, Symbol=S>,
         } else {
             Err(ParseEndError)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests{
+    use super::*;
+
+    #[derive(Debug)]
+    #[derive(PartialEq, Eq, Clone, Copy)]
+    pub enum Tok {
+        NUM, PLUS, MINUS,
+    }
+
+    grammar!(TestGrammar <crate::tests::Tok>:
+             expr = [NUM | expr PLUS expr | expr MINUS expr]
+    );
+
+    #[test]
+    fn basic() {
+        use TestGrammar::*;
+
+        let grammar = get_grammar();
+        let mut parser = Parser::new(&grammar, NonTerminal::expr);
+
+        assert!(parser.parse_token(&Tok::NUM).is_ok());
+        assert!(parser.parse_token(&Tok::PLUS).is_ok());
+        assert!(parser.parse_token(&Tok::NUM).is_ok());
     }
 }
