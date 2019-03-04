@@ -86,8 +86,15 @@ where R: Rule<'a, Symbol=S>, S: 'a
     }
 }
 
-struct IncompleteParseError<T>(T);
-struct ParseEndError;
+#[derive(PartialEq)]
+pub enum ParserError<T> {
+    // Encountered token that does not match any available subparses
+    UnexpectedToken(T),
+    // Parse ended when there's still tokens left to be matched
+    UnexpectedEnd,
+    // Returned when parser is called after parsing has completed or erred
+    ParseEnded,
+}
 
 struct Parser<'a, G, S: 'a, R, NT: 'a + Copy>
 where R: Rule<'a, Symbol=S>, G: Grammar<'a, NonTerminal=NT, Rule=R>
@@ -96,6 +103,7 @@ where R: Rule<'a, Symbol=S>, G: Grammar<'a, NonTerminal=NT, Rule=R>
     chart: gen!(Chart),
     progress: usize,
     start_symbol: NT,
+    finished: bool
 }
 
 impl<'a, G, S: 'a, R, NT: 'a, T> Parser<'a, G, S, R, NT>
@@ -106,8 +114,14 @@ where R: Rule<'a, Symbol=S>,
       T: Eq + Copy,
 {
     pub fn new(grammar: &'a G, start_symbol: NT) -> Self {
-        let mut parser =
-            Self { chart: Chart::new(), grammar, progress: 0, start_symbol };
+        let mut parser = Self {
+            chart: Chart::new(),
+            grammar,
+            progress: 0,
+            start_symbol,
+            finished: false
+        };
+
         parser.chart.push(StateSet::new());
         parser
     }
@@ -178,15 +192,21 @@ where R: Rule<'a, Symbol=S>,
         }
     }
 
-    pub fn parse_token(&mut self, token: &T) -> Result<(), IncompleteParseError<T>> {
+    pub fn parse_token(&mut self, token: &T) -> Result<(), ParserError<T>> {
+        if self.finished { return Err(ParserError::ParseEnded); }
+
         if self.parse_set(Some(token)) {
             Ok(())
         } else {
-            Err(IncompleteParseError(*token))
+            self.finished = true;
+            Err(ParserError::UnexpectedToken(*token))
         }
     }
 
-    pub fn finish_parse(&mut self) -> Result<(), ParseEndError> {
+    pub fn finish_parse(&mut self) -> Result<(), ParserError<T>> {
+        if self.finished { return Err(ParserError::ParseEnded); }
+
+        self.finished = true;
         let continued = self.parse_set(None);
         assert!(!continued);
 
@@ -195,7 +215,7 @@ where R: Rule<'a, Symbol=S>,
         }) {
             Ok(())
         } else {
-            Err(ParseEndError)
+            Err(ParserError::UnexpectedEnd)
         }
     }
 }
@@ -207,11 +227,14 @@ mod tests{
     #[derive(Debug)]
     #[derive(PartialEq, Eq, Clone, Copy)]
     pub enum Tok {
-        NUM, PLUS, MINUS,
+        NUM, PLUS, MINUS, LB, RB
     }
 
     grammar!(TestGrammar <crate::tests::Tok>:
-             expr = [NUM | expr PLUS expr | expr MINUS expr]
+             expr = [NUM | 
+                     expr PLUS expr | 
+                     expr MINUS expr |
+                     LB expr RB]
     );
 
     #[test]
@@ -225,5 +248,53 @@ mod tests{
         assert!(parser.parse_token(&Tok::PLUS).is_ok());
         assert!(parser.parse_token(&Tok::NUM).is_ok());
         assert!(parser.finish_parse().is_ok());
+        assert!(parser.finish_parse().unwrap_err() == ParserError::ParseEnded);
+        assert!(
+            parser.parse_token(&Tok::NUM).unwrap_err() == ParserError::ParseEnded);
+    }
+
+    #[test]
+    fn nested() {
+        use TestGrammar::*;
+        use Tok::*;
+
+        let grammar = get_grammar();
+        let mut parser = Parser::new(&grammar, NonTerminal::expr);
+
+        for tok in [NUM, PLUS, LB, NUM, MINUS, NUM, RB].iter() {
+            assert!(parser.parse_token(tok).is_ok());
+        }
+        assert!(parser.finish_parse().is_ok());
+    }
+
+    #[test]
+    fn token_error() {
+        use TestGrammar::*;
+        use Tok::*;
+
+        let grammar = get_grammar();
+        let mut parser = Parser::new(&grammar, NonTerminal::expr);
+
+        for tok in [LB, LB, NUM, RB, RB].iter() {
+            assert!(parser.parse_token(tok).is_ok());
+        }
+        assert!(parser.parse_token(&RB).unwrap_err() == 
+                ParserError::UnexpectedToken(RB));
+        assert!(parser.finish_parse().unwrap_err() == ParserError::ParseEnded);
+    }
+
+    #[test]
+    fn end_error() {
+        use TestGrammar::*;
+        use Tok::*;
+
+        let grammar = get_grammar();
+        let mut parser = Parser::new(&grammar, NonTerminal::expr);
+
+        for tok in [LB, LB, NUM].iter() {
+            assert!(parser.parse_token(tok).is_ok());
+        }
+        assert!(parser.finish_parse().unwrap_err() == ParserError::UnexpectedEnd);
+        assert!(parser.parse_token(&RB).unwrap_err() == ParserError::ParseEnded);
     }
 }
