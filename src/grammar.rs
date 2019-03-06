@@ -1,45 +1,3 @@
-pub trait Rule<'a> {
-    type Symbol: 'a;
-    type SymIter: Iterator<Item=&'a Self::Symbol>;
-
-    fn iter(&'a self) -> Self::SymIter;
-
-    fn len(&'a self) -> usize;
-
-    fn symbol(&'a self, i: usize) -> Option<&Self::Symbol>;
-}
-
-pub trait Grammar<'a> {
-    type NonTerminal: 'a;
-    type NonTermIter: Iterator<Item=&'a Self::NonTerminal>;
-    type Rule: 'a;
-    type RuleIter: Iterator<Item=&'a Self::Rule>;
-
-    fn get_iter_rhs(&'a self, lhs: &Self::NonTerminal) -> Self::RuleIter;
-
-    fn iter_lhs(&'a self) -> Self::NonTermIter;
-
-    fn is_nullable(&'a self, non_term: &Self::NonTerminal) -> bool; 
-}
-
-pub trait Symbol {
-    type NonTerminal;
-    type Terminal;
-
-    fn terminal(&self) -> Option<&Self::Terminal>;
-
-    fn nonterminal(&self) -> Option<&Self::NonTerminal>;
-
-    fn call_match<FN, FT>(&self, nt_handler: FN, t_handler: FT)
-    where FN: FnOnce(&Self::NonTerminal), FT: FnOnce(&Self::Terminal);
-}
-
-pub trait NonTerminal {
-    const count: usize;
-
-    fn to_usize(&self) -> usize;
-}
-
 #[macro_export]
 macro_rules! grammar {
     ( @rules $grammar:ident, ) => ();
@@ -79,7 +37,7 @@ macro_rules! grammar {
 
                 const NT_COUNT: usize = NonTerminal::__NonTerminalEnd as usize;
 
-                impl $crate::grammar::NonTerminal for NonTerminal {
+                impl NonTerminal {
                     const count: usize = NT_COUNT;
 
                     fn to_usize(&self) -> usize {
@@ -94,25 +52,22 @@ macro_rules! grammar {
                     NonTerminal(NonTerminal),
                 }
 
-                impl $crate::grammar::Symbol for Symbol {
-                    type Terminal = $Token;
-                    type NonTerminal = NonTerminal;
-
-                    fn terminal(&self) -> Option<&Self::Terminal> {
+                impl Symbol {
+                    pub fn terminal(&self) -> Option<&$Token> {
                         if let Symbol::Terminal(t) = self {
                             Some(&t)
                         } else { None }
                     }
 
-                    fn nonterminal(&self) -> Option<&Self::NonTerminal> {
+                    pub fn nonterminal(&self) -> Option<&NonTerminal> {
                         if let Symbol::NonTerminal(t) = self {
                             Some(&t)
                         } else { None }
                     }
 
-                    fn call_match<FN, FT>(&self, nt_handler: FN, t_handler: FT)
-                        where FN: FnOnce(&Self::NonTerminal),
-                              FT: FnOnce(&Self::Terminal)
+                    pub fn call_match<FN, FT>(&self, nt_handler: FN, t_handler: FT)
+                        where FN: FnOnce(&NonTerminal),
+                              FT: FnOnce(&$Token)
                         {
                             match self {
                                 Symbol::Terminal(t) => t_handler(t),
@@ -139,17 +94,14 @@ macro_rules! grammar {
 
                 pub struct Rule(Vec<Symbol>);
 
-                impl<'a> $crate::grammar::Rule<'a> for Rule {
-                    type Symbol = Symbol;
-                    type SymIter = std::slice::Iter<'a, Symbol>;
-
-                    fn iter(&'a self) -> Self::SymIter {
+                impl Rule {
+                    pub fn iter(&self) -> impl Iterator<Item=&Symbol> {
                         self.0.iter()
                     }
 
-                    fn len(&self) -> usize { self.0.len() }
+                    pub fn len(&self) -> usize { self.0.len() }
 
-                    fn symbol(&self, i: usize) -> Option<&Symbol> { self.0.get(i) }
+                    pub fn symbol(&self, i: usize) -> Option<&Symbol> { self.0.get(i) }
                 }
 
                 pub struct Grammar {
@@ -169,30 +121,23 @@ macro_rules! grammar {
                         let prod_rules = self.rules.entry(lhs).or_insert(Vec::new());
                         prod_rules.push(Rule(rhs));
                     }
-                }
 
-                impl<'a> $crate::grammar::Grammar<'a> for Grammar {
-                    type NonTerminal = NonTerminal;
-                    type NonTermIter =
-                        std::collections::hash_map::Keys<'a, NonTerminal, Vec<Rule>>;
-                    type Rule = Rule;
-                    type RuleIter = std::slice::Iter<'a, Rule>;
+                    pub fn get_iter_rhs(
+                        &self,
+                        lhs: &NonTerminal
+                    ) -> impl Iterator<Item=&Rule>
+                    {
+                        self.rules.get(lhs).map(|vec| vec.iter()).unwrap()
+                    }
 
-                    fn get_iter_rhs(&'a self, lhs: &Self::NonTerminal)
-                        -> Self::RuleIter
-                        {
-                            self.rules.get(lhs).map(|vec| vec.iter()).unwrap()
-                        }
-
-                    fn iter_lhs(&'a self) -> Self::NonTermIter {
+                    pub fn iter_lhs(&self) -> impl Iterator<Item=&NonTerminal> {
                         self.rules.keys()
                     }
 
-                    fn is_nullable(&'a self, non_term: &Self::NonTerminal) -> bool {
+                    pub fn is_nullable(&self, non_term: &NonTerminal) -> bool {
                         false
                     }
                 }
-
             }
 
             use $Token::*;
@@ -206,6 +151,7 @@ macro_rules! grammar {
             }
 
             pub use _Inner::{Grammar, Rule, Symbol, NonTerminal};
+            pub use $Token;
         }
     )
 }
