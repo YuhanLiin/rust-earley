@@ -134,15 +134,15 @@ macro_rules! grammar {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use std::collections::HashSet;
     use std::iter::FromIterator;
-    use super::*;
 
-    #[derive(Debug)]
-    #[derive(PartialEq)]
-    #[derive(Eq)]
+    #[derive(Debug, PartialEq, Eq)]
     pub enum Tok {
-        NUM, PLUS, MINUS,
+        NUM,
+        PLUS,
+        MINUS,
     }
 
     // Just testing if this invocation even compiles
@@ -176,16 +176,13 @@ mod tests {
 
         let grammar = get_grammar();
 
-        let non_terminals: HashSet<&NonTerminal> =
-            HashSet::from_iter(grammar.iter_lhs());
+        let non_terminals: HashSet<&NonTerminal> = HashSet::from_iter(grammar.iter_lhs());
 
-        let rules =
-            Vec::from_iter(grammar.get_iter_rhs(NonTerminal::empty));
+        let rules = Vec::from_iter(grammar.get_iter_rhs(NonTerminal::empty));
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0].len(), 0);
 
-        let rules =
-            Vec::from_iter(grammar.get_iter_rhs(NonTerminal::stmt));
+        let rules = Vec::from_iter(grammar.get_iter_rhs(NonTerminal::stmt));
         assert_eq!(rules.len(), 2);
         assert_eq!(rules[0].len(), 1);
         assert_eq!(
@@ -194,22 +191,25 @@ mod tests {
         );
         assert_eq!(rules[1].len(), 0);
 
-        let rules =
-            Vec::from_iter(grammar.get_iter_rhs(NonTerminal::expr));
+        let rules = Vec::from_iter(grammar.get_iter_rhs(NonTerminal::expr));
         assert_eq!(rules.len(), 3);
-        let rules = Vec::from_iter(rules.iter().map(|rule| {
-            Vec::from_iter(rule.iter())
-        }));
+        let rules = Vec::from_iter(rules.iter().map(|rule| Vec::from_iter(rule.iter())));
         assert_eq!(rules[0], vec![&Symbol::Terminal(Tok::NUM)]);
-        assert_eq!(rules[1], vec![
-            &Symbol::NonTerminal(NonTerminal::expr),
-            &Symbol::Terminal(Tok::PLUS),
-            &Symbol::NonTerminal(NonTerminal::expr),
-        ]);
-        assert_eq!(rules[2], vec![
-            &Symbol::NonTerminal(NonTerminal::expr),
-            &Symbol::Terminal(Tok::MINUS),
-            &Symbol::NonTerminal(NonTerminal::expr),
-        ]);
+        assert_eq!(
+            rules[1],
+            vec![
+                &Symbol::NonTerminal(NonTerminal::expr),
+                &Symbol::Terminal(Tok::PLUS),
+                &Symbol::NonTerminal(NonTerminal::expr),
+            ]
+        );
+        assert_eq!(
+            rules[2],
+            vec![
+                &Symbol::NonTerminal(NonTerminal::expr),
+                &Symbol::Terminal(Tok::MINUS),
+                &Symbol::NonTerminal(NonTerminal::expr),
+            ]
+        );
     }
 }
