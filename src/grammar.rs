@@ -68,6 +68,7 @@ macro_rules! grammar {
                 }
             }
 
+            #[derive(Debug)]
             pub struct Rule(Vec<Symbol>);
 
             impl Rule {
@@ -80,6 +81,7 @@ macro_rules! grammar {
                 pub fn symbol(&self, i: usize) -> Option<&Symbol> { self.0.get(i) }
             }
 
+            #[derive(Debug)]
             pub struct Grammar {
                 rules: HashMap<NonTerminal, Vec<Rule>>,
                 nullable: [bool; NT_COUNT],

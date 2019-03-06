@@ -10,6 +10,7 @@ macro_rules! parser {
             use std::collections::HashMap;
             use std::hash::Hash;
 
+            #[derive(Debug)]
             struct Item<'a> {
                 lhs: NonTerminal,
                 rule: &'a Rule,
@@ -48,6 +49,7 @@ macro_rules! parser {
                 }
             }
 
+            #[derive(Debug)]
             struct StateSet<'a>(Vec<Item<'a>>);
 
             impl<'a> StateSet<'a> {
@@ -72,6 +74,7 @@ macro_rules! parser {
                 }
             }
 
+            #[derive(Debug)]
             struct Chart<'a>(Vec<StateSet<'a>>);
 
             impl<'a> Chart<'a> {
@@ -96,22 +99,20 @@ macro_rules! parser {
                 }
             }
 
-            #[derive(PartialEq)]
-            pub enum ParserError {
-                // Encountered token that does not match any available subparses
-                UnexpectedToken(Token),
-                // Parse ended when there's still tokens left to be matched
-                UnexpectedEnd,
-                // Returned when parser is called after parsing has completed or erred
-                ParseEnded,
-            }
+            #[derive(PartialEq, Debug)]
+            // Encountered token that does not match any available subparses
+            pub struct UnexpectedToken(pub Token);
 
+            #[derive(Debug)]
+            // Parse ended when there's still tokens left to be matched
+            pub struct UnexpectedEnd;
+
+            #[derive(Debug)]
             pub struct Parser<'a> {
                 grammar: &'a Grammar,
                 chart: Chart<'a>,
                 progress: usize,
                 start_symbol: NonTerminal,
-                finished: bool,
             }
 
             impl<'a> Parser<'a> {
@@ -121,7 +122,6 @@ macro_rules! parser {
                         grammar,
                         progress: 0,
                         start_symbol,
-                        finished: false,
                     };
 
                     parser.chart.push(StateSet::new());
@@ -200,25 +200,15 @@ macro_rules! parser {
                     }
                 }
 
-                pub fn parse_token(&mut self, token: Token) -> Result<(), ParserError> {
-                    if self.finished {
-                        return Err(ParserError::ParseEnded);
-                    }
-
+                pub fn parse_token(mut self, token: Token) -> Result<Self, UnexpectedToken> {
                     if self.parse_set(Some(token)) {
-                        Ok(())
+                        Ok(self)
                     } else {
-                        self.finished = true;
-                        Err(ParserError::UnexpectedToken(token))
+                        Err(UnexpectedToken(token))
                     }
                 }
 
-                pub fn finish_parse(&mut self) -> Result<(), ParserError> {
-                    if self.finished {
-                        return Err(ParserError::ParseEnded);
-                    }
-
-                    self.finished = true;
+                pub fn finish_parse(mut self) -> Result<Self, UnexpectedEnd> {
                     let continued = self.parse_set(None);
                     assert!(!continued);
 
@@ -228,9 +218,9 @@ macro_rules! parser {
                         .iter()
                         .any(|item| item.done() && item.from == 0 && item.lhs == self.start_symbol)
                     {
-                        Ok(())
+                        Ok(self)
                     } else {
-                        Err(ParserError::UnexpectedEnd)
+                        Err(UnexpectedEnd)
                     }
                 }
             }
@@ -268,12 +258,10 @@ mod tests {
         let grammar = get_grammar();
         let mut parser = Parser::new(&grammar, NonTerminal::expr);
 
-        assert!(parser.parse_token(Token::NUM).is_ok());
-        assert!(parser.parse_token(Token::PLUS).is_ok());
-        assert!(parser.parse_token(Token::NUM).is_ok());
-        assert!(parser.finish_parse().is_ok());
-        assert!(parser.finish_parse().unwrap_err() == ParserError::ParseEnded);
-        assert!(parser.parse_token(Token::NUM).unwrap_err() == ParserError::ParseEnded);
+        parser = parser.parse_token(Token::NUM).unwrap();
+        parser = parser.parse_token(Token::PLUS).unwrap();
+        parser = parser.parse_token(Token::NUM).unwrap();
+        parser = parser.finish_parse().unwrap();
     }
 
     #[test]
@@ -286,9 +274,9 @@ mod tests {
         let mut parser = Parser::new(&grammar, NonTerminal::expr);
 
         for tok in [NUM, PLUS, LB, NUM, MINUS, NUM, RB].iter() {
-            assert!(parser.parse_token(*tok).is_ok());
+            parser = parser.parse_token(*tok).unwrap();
         }
-        assert!(parser.finish_parse().is_ok());
+        parser = parser.finish_parse().unwrap();
     }
 
     #[test]
@@ -301,10 +289,9 @@ mod tests {
         let mut parser = Parser::new(&grammar, NonTerminal::expr);
 
         for tok in [LB, LB, NUM, RB, RB].iter() {
-            assert!(parser.parse_token(*tok).is_ok());
+            parser = parser.parse_token(*tok).unwrap();
         }
-        assert!(parser.parse_token(RB).unwrap_err() == ParserError::UnexpectedToken(RB));
-        assert!(parser.finish_parse().unwrap_err() == ParserError::ParseEnded);
+        assert!(parser.parse_token(RB).unwrap_err() == UnexpectedToken(RB));
     }
 
     #[test]
@@ -317,9 +304,8 @@ mod tests {
         let mut parser = Parser::new(&grammar, NonTerminal::expr);
 
         for tok in [LB, LB, NUM].iter() {
-            assert!(parser.parse_token(*tok).is_ok());
+            parser = parser.parse_token(*tok).unwrap();
         }
-        assert!(parser.finish_parse().unwrap_err() == ParserError::UnexpectedEnd);
-        assert!(parser.parse_token(RB).unwrap_err() == ParserError::ParseEnded);
+        parser.finish_parse().unwrap_err();
     }
 }
