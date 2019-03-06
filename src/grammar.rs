@@ -26,133 +26,109 @@ macro_rules! grammar {
     ( $name:ident <$Token:path>:
       $( $lhs:ident = $rhs:tt )* ) => (
 
-        mod $name {
-            mod _Inner {
-                #[derive(Debug)]
-                #[derive(Hash, PartialEq, Eq, Clone, Copy)]
-                pub enum NonTerminal {
-                    $($lhs,)*
-                    __NonTerminalEnd,
-                }
+    mod $name {
+        mod _Inner {
+            use std::collections::{HashMap, HashSet};
 
-                const NT_COUNT: usize = NonTerminal::__NonTerminalEnd as usize;
+            #[derive(Debug)]
+            #[derive(Hash, PartialEq, Eq, Clone, Copy)]
+            pub enum NonTerminal {
+                $($lhs,)*
+                __NonTerminalEnd,
+            }
 
-                impl NonTerminal {
-                    const count: usize = NT_COUNT;
+            pub const NT_COUNT: usize = NonTerminal::__NonTerminalEnd as usize;
 
-                    fn to_usize(&self) -> usize {
-                        *self as usize
-                    }
-                }
-
-                #[derive(Debug)]
-                #[derive(PartialEq, Eq)]
-                pub enum Symbol{
-                    Terminal($Token),
-                    NonTerminal(NonTerminal),
-                }
-
-                impl Symbol {
-                    pub fn terminal(&self) -> Option<&$Token> {
-                        if let Symbol::Terminal(t) = self {
-                            Some(&t)
-                        } else { None }
-                    }
-
-                    pub fn nonterminal(&self) -> Option<&NonTerminal> {
-                        if let Symbol::NonTerminal(t) = self {
-                            Some(&t)
-                        } else { None }
-                    }
-
-                    pub fn call_match<FN, FT>(&self, nt_handler: FN, t_handler: FT)
-                        where FN: FnOnce(&NonTerminal),
-                              FT: FnOnce(&$Token)
-                        {
-                            match self {
-                                Symbol::Terminal(t) => t_handler(t),
-                                Symbol::NonTerminal(nt) => nt_handler(nt),
-                            }
-                        }
-                }
-
-                pub trait MakeSymbol<T> {
-                    fn new(arg: T) -> Self;
-                }
-
-                // Allows static dispatch on new()
-                impl MakeSymbol<NonTerminal> for Symbol {
-                    fn new(arg: NonTerminal) -> Self {
-                        Symbol::NonTerminal(arg)
-                    }
-                }
-                impl MakeSymbol<$Token> for Symbol {
-                    fn new(arg: $Token) -> Self {
-                        Symbol::Terminal(arg)
-                    }
-                }
-
-                pub struct Rule(Vec<Symbol>);
-
-                impl Rule {
-                    pub fn iter(&self) -> impl Iterator<Item=&Symbol> {
-                        self.0.iter()
-                    }
-
-                    pub fn len(&self) -> usize { self.0.len() }
-
-                    pub fn symbol(&self, i: usize) -> Option<&Symbol> { self.0.get(i) }
-                }
-
-                pub struct Grammar {
-                    rules: std::collections::HashMap<NonTerminal, Vec<Rule>>,
-                    nullable: [bool; NT_COUNT],
-                }
-
-                impl Grammar {
-                    pub fn new() -> Self {
-                        Grammar {
-                            rules: std::collections::HashMap::new(),
-                            nullable: [false; NT_COUNT],
-                        }
-                    }
-
-                    pub fn add_rule(&mut self, lhs: NonTerminal, rhs: Vec<Symbol>) {
-                        let prod_rules = self.rules.entry(lhs).or_insert(Vec::new());
-                        prod_rules.push(Rule(rhs));
-                    }
-
-                    pub fn get_iter_rhs(
-                        &self,
-                        lhs: &NonTerminal
-                    ) -> impl Iterator<Item=&Rule>
-                    {
-                        self.rules.get(lhs).map(|vec| vec.iter()).unwrap()
-                    }
-
-                    pub fn iter_lhs(&self) -> impl Iterator<Item=&NonTerminal> {
-                        self.rules.keys()
-                    }
-
-                    pub fn is_nullable(&self, non_term: &NonTerminal) -> bool {
-                        false
-                    }
+            impl NonTerminal {
+                pub fn to_usize(&self) -> usize {
+                    *self as usize
                 }
             }
 
-            use $Token::*;
-            use _Inner::NonTerminal::*;
-            use _Inner::MakeSymbol;
-
-            pub fn get_grammar() -> _Inner::Grammar {
-                let mut grammar = _Inner::Grammar::new();
-                grammar!(@rules grammar, $( $lhs = $rhs )*);
-                grammar
+            #[derive(Debug)]
+            #[derive(PartialEq, Eq)]
+            pub enum Symbol{
+                Terminal($Token),
+                NonTerminal(NonTerminal),
             }
 
-            pub use _Inner::{Grammar, Rule, Symbol, NonTerminal};
-            pub use $Token;
+            pub trait MakeSymbol<T> {
+                fn new(arg: T) -> Self;
+            }
+
+            // Allows static dispatch on new()
+            impl MakeSymbol<NonTerminal> for Symbol {
+                fn new(arg: NonTerminal) -> Self {
+                    Symbol::NonTerminal(arg)
+                }
+            }
+            impl MakeSymbol<$Token> for Symbol {
+                fn new(arg: $Token) -> Self {
+                    Symbol::Terminal(arg)
+                }
+            }
+
+            pub struct Rule(Vec<Symbol>);
+
+            impl Rule {
+                pub fn iter(&self) -> impl Iterator<Item=&Symbol> {
+                    self.0.iter()
+                }
+
+                pub fn len(&self) -> usize { self.0.len() }
+
+                pub fn symbol(&self, i: usize) -> Option<&Symbol> { self.0.get(i) }
+            }
+
+            pub struct Grammar {
+                rules: HashMap<NonTerminal, Vec<Rule>>,
+                nullable: [bool; NT_COUNT],
+            }
+
+            impl Grammar {
+                pub(super) fn new() -> Self {
+                    Grammar {
+                        rules: HashMap::new(),
+                        nullable: [false; NT_COUNT],
+                    }
+                }
+
+                pub(super) fn add_rule(&mut self, lhs: NonTerminal, rhs: Vec<Symbol>) {
+                    let prod_rules = self.rules.entry(lhs).or_insert(Vec::new());
+                    prod_rules.push(Rule(rhs));
+                }
+
+                pub fn get_iter_rhs(
+                    &self,
+                    lhs: NonTerminal
+                ) -> impl Iterator<Item=&Rule>
+                {
+                    self.rules.get(&lhs).map(|vec| vec.iter()).unwrap()
+                }
+
+                pub fn iter_lhs(&self) -> impl Iterator<Item=&NonTerminal> {
+                    self.rules.keys()
+                }
+
+                pub fn is_nullable(&self, non_term: NonTerminal) -> bool {
+                    false
+                }
+            }
         }
+
+        use $Token::*;
+        use _Inner::NonTerminal::*;
+        use _Inner::MakeSymbol;
+
+        pub fn get_grammar() -> _Inner::Grammar {
+            let mut grammar = _Inner::Grammar::new();
+            grammar!(@rules grammar, $( $lhs = $rhs )*);
+            grammar
+        }
+
+        pub use _Inner::{Grammar, Rule, Symbol, NonTerminal, NT_COUNT};
+        pub use $Token;
+    }
     )
 }
 
@@ -204,12 +180,12 @@ mod tests {
             HashSet::from_iter(grammar.iter_lhs());
 
         let rules =
-            Vec::from_iter(grammar.get_iter_rhs(&NonTerminal::empty));
+            Vec::from_iter(grammar.get_iter_rhs(NonTerminal::empty));
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0].len(), 0);
 
         let rules =
-            Vec::from_iter(grammar.get_iter_rhs(&NonTerminal::stmt));
+            Vec::from_iter(grammar.get_iter_rhs(NonTerminal::stmt));
         assert_eq!(rules.len(), 2);
         assert_eq!(rules[0].len(), 1);
         assert_eq!(
@@ -219,7 +195,7 @@ mod tests {
         assert_eq!(rules[1].len(), 0);
 
         let rules =
-            Vec::from_iter(grammar.get_iter_rhs(&NonTerminal::expr));
+            Vec::from_iter(grammar.get_iter_rhs(NonTerminal::expr));
         assert_eq!(rules.len(), 3);
         let rules = Vec::from_iter(rules.iter().map(|rule| {
             Vec::from_iter(rule.iter())
