@@ -148,6 +148,10 @@ macro_rules! parser {
                     // TODO handle ambiguity
                     assert!(item.done());
                     let from = item.from;
+                    // In this case LHS has to be nullable, which means it has already
+                    // been advanced for this state set.
+                    if from == self.progress { return; }
+
                     for i in 0..self.chart.get(from).len() {
                         if let Some(sym) = self.chart.get(from).get(i).dot_symbol() {
                             if let Symbol::NonTerminal(nt) = sym {
@@ -208,7 +212,7 @@ macro_rules! parser {
                     }
                 }
 
-                pub fn finish_parse(mut self) -> Result<Self, UnexpectedEnd> {
+                pub fn finish_parse(mut self) -> Result<(), UnexpectedEnd> {
                     let continued = self.parse_set(None);
                     assert!(!continued);
 
@@ -218,7 +222,7 @@ macro_rules! parser {
                         .iter()
                         .any(|item| item.done() && item.from == 0 && item.lhs == self.start_symbol)
                     {
-                        Ok(self)
+                        Ok(())
                     } else {
                         Err(UnexpectedEnd)
                     }
@@ -261,7 +265,7 @@ mod tests {
         parser = parser.parse_token(Token::NUM).unwrap();
         parser = parser.parse_token(Token::PLUS).unwrap();
         parser = parser.parse_token(Token::NUM).unwrap();
-        parser = parser.finish_parse().unwrap();
+        parser.finish_parse().unwrap();
     }
 
     #[test]
@@ -276,7 +280,7 @@ mod tests {
         for tok in [NUM, PLUS, LB, NUM, MINUS, NUM, RB].iter() {
             parser = parser.parse_token(*tok).unwrap();
         }
-        parser = parser.finish_parse().unwrap();
+        parser.finish_parse().unwrap();
     }
 
     #[test]
