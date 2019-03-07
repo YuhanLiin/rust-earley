@@ -9,7 +9,7 @@ macro_rules! grammar {
     );
 
     ( @rhs $grammar:ident, $lhs:ident, ) => (
-        $grammar.add_rule($lhs, vec![]);
+        $grammar.set_nullable($lhs);
     );
 
     ( @rhs $grammar:ident, $lhs:ident, $($symbol:ident)* $( | $($tail:tt)* )? ) => (
@@ -38,12 +38,6 @@ macro_rules! grammar {
             }
 
             pub const NT_COUNT: usize = NonTerminal::__NonTerminalEnd as usize;
-
-            impl NonTerminal {
-                pub fn to_usize(&self) -> usize {
-                    *self as usize
-                }
-            }
 
             #[derive(Debug)]
             #[derive(PartialEq, Eq)]
@@ -100,12 +94,16 @@ macro_rules! grammar {
                     prod_rules.push(Rule(rhs));
                 }
 
+                pub(super) fn set_nullable(&mut self, sym: NonTerminal) {
+                    self.nullable[sym as usize] = true;
+                }
+
                 pub fn get_iter_rhs(
                     &self,
                     lhs: NonTerminal
                 ) -> impl Iterator<Item=&Rule>
                 {
-                    self.rules.get(&lhs).map(|vec| vec.iter()).unwrap()
+                    self.rules.get(&lhs).into_iter().flat_map(|vec| vec.iter())
                 }
 
                 pub fn iter_lhs(&self) -> impl Iterator<Item=&NonTerminal> {
@@ -113,7 +111,7 @@ macro_rules! grammar {
                 }
 
                 pub fn is_nullable(&self, non_term: NonTerminal) -> bool {
-                    false
+                    self.nullable[non_term as usize]
                 }
             }
         }
@@ -181,17 +179,17 @@ mod tests {
         let non_terminals: HashSet<&NonTerminal> = HashSet::from_iter(grammar.iter_lhs());
 
         let rules = Vec::from_iter(grammar.get_iter_rhs(NonTerminal::empty));
-        assert_eq!(rules.len(), 1);
-        assert_eq!(rules[0].len(), 0);
+        assert_eq!(rules.len(), 0);
+        assert!(grammar.is_nullable(NonTerminal::empty));
 
         let rules = Vec::from_iter(grammar.get_iter_rhs(NonTerminal::stmt));
-        assert_eq!(rules.len(), 2);
+        assert_eq!(rules.len(), 1);
         assert_eq!(rules[0].len(), 1);
         assert_eq!(
             rules[0].symbol(0).unwrap(),
             &Symbol::NonTerminal(NonTerminal::expr)
         );
-        assert_eq!(rules[1].len(), 0);
+        assert!(grammar.is_nullable(NonTerminal::stmt));
 
         let rules = Vec::from_iter(grammar.get_iter_rhs(NonTerminal::expr));
         assert_eq!(rules.len(), 3);

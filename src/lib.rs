@@ -129,8 +129,8 @@ macro_rules! parser {
                 }
 
                 fn predict(&mut self, non_term: NonTerminal, has_predicted: &mut [bool]) {
-                    if !has_predicted[non_term.to_usize()] {
-                        has_predicted[non_term.to_usize()] = true;
+                    if !has_predicted[non_term as usize] {
+                        has_predicted[non_term as usize] = true;
                         let progress = self.progress;
                         for rule in self.grammar.get_iter_rhs(non_term) {
                             self.chart
