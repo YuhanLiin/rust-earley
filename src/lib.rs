@@ -150,7 +150,9 @@ macro_rules! parser {
                     let from = item.from;
                     // In this case LHS has to be nullable, which means it has already
                     // been advanced for this state set.
-                    if from == self.progress { return; }
+                    if from == self.progress {
+                        return;
+                    }
 
                     for i in 0..self.chart.get(from).len() {
                         if let Some(sym) = self.chart.get(from).get(i).dot_symbol() {
