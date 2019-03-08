@@ -7,7 +7,7 @@ macro_rules! parser {
         mod $name {
             use $grammar_mod::*;
 
-            #[derive(Debug)]
+            #[derive(Debug, Clone)]
             struct Item<'a> {
                 lhs: NonTerminal,
                 rule: &'a Rule,
@@ -46,7 +46,7 @@ macro_rules! parser {
                 }
             }
 
-            #[derive(Debug)]
+            #[derive(Debug, Clone)]
             struct StateSet<'a>(Vec<Item<'a>>);
 
             impl<'a> StateSet<'a> {
@@ -71,7 +71,7 @@ macro_rules! parser {
                 }
             }
 
-            #[derive(Debug)]
+            #[derive(Debug, Clone)]
             struct Chart<'a>(Vec<StateSet<'a>>);
 
             impl<'a> Chart<'a> {
@@ -104,7 +104,7 @@ macro_rules! parser {
             // Parse ended when there's still tokens left to be matched
             pub struct UnexpectedEnd;
 
-            #[derive(Debug)]
+            #[derive(Debug, Clone)]
             pub struct Parser<'a> {
                 grammar: &'a Grammar,
                 chart: Chart<'a>,
@@ -134,6 +134,12 @@ macro_rules! parser {
                                 .get_mut(progress)
                                 .push(Item::new(non_term, rule, progress));
                         }
+                    }
+                }
+
+                fn advance_empty(&mut self, non_term: NonTerminal, item: &Item<'a>) {
+                    if self.grammar.is_nullable(non_term) {
+                        self.chart.get_mut(self.progress).push(Item::advance(item));
                     }
                 }
 
@@ -178,6 +184,7 @@ macro_rules! parser {
                         if let Some(symbol) = item.dot_symbol() {
                             match symbol {
                                 Symbol::NonTerminal(nt) => {
+                                    self.advance_empty(*nt, &item);
                                     self.predict(*nt, &mut has_predicted);
                                 }
                                 Symbol::Terminal(t) => {
@@ -311,5 +318,32 @@ mod tests {
 
         parse_tokens!(parser, [LB, LB, NUM]);
         parser.finish_parse().unwrap_err();
+    }
+
+    grammar!(nullable_grammar <crate::tests::Token>:
+             A = [ B | ]
+             B = [ A B | A ]
+             C = [ B | C NUM ]);
+
+    parser!(nullable_parser<crate::tests::nullable_grammar>);
+
+    #[test]
+    fn nullable_parse() {
+        use nullable_grammar::*;
+        use nullable_parser::*;
+        use Token::*;
+
+        let grammar = get_grammar();
+        let original_parser = Parser::new(&grammar, NonTerminal::C);
+
+        let parser = original_parser.clone();
+        parser.finish_parse().unwrap();
+
+        let mut parser = original_parser.clone();
+        parse_tokens!(parser, [NUM, NUM, NUM, NUM]);
+        parser.finish_parse().unwrap();
+
+        let parser = original_parser.clone();
+        parser.parse_token(PLUS).unwrap_err();
     }
 }
