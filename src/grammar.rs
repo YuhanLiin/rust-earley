@@ -13,7 +13,7 @@ macro_rules! grammar {
     );
 
     ( @rhs $grammar:ident, $lhs:ident, $($symbol:ident)* $( | $($tail:tt)* )? ) => (
-        $grammar.add_rule($lhs, vec![ $(_Inner::Symbol::new($symbol)),* ]);
+        $grammar.add_rule($lhs, vec![ $(__inner::Symbol::new($symbol)),* ]);
         grammar!(@rhs_tail $grammar, $lhs, $(| $($tail)*)?)
     );
 
@@ -26,9 +26,11 @@ macro_rules! grammar {
     ( $name:ident <$Token:path>:
       $( $lhs:ident = $rhs:tt )* ) => (
 
+    #[allow(unused)]
     mod $name {
-        mod _Inner {
-            use std::collections::{HashMap, HashSet};
+        #[allow(unused)]
+        mod __inner {
+            use std::collections::HashMap;
             use std::iter;
 
             #[derive(Debug)]
@@ -101,7 +103,7 @@ macro_rules! grammar {
 
                 pub(super) fn compute_nullable(&mut self) {
                     let mut rhs_mapping: [Vec<(NonTerminal, &Rule)>; NT_COUNT] = Default::default();
-                    
+
                     let rules = self.iter_lhs().map(|l| *l).filter(|lhs| !self.is_nullable(*lhs)).flat_map(|lhs| {
                         iter::repeat(lhs).zip(self.get_iter_rhs(lhs))
                     });
@@ -123,7 +125,7 @@ macro_rules! grammar {
 
                     while !work_symbols.is_empty() {
                         let sym = work_symbols.pop().unwrap();
-                        
+
                         for (lhs, rule) in rhs_mapping[sym as usize].iter() {
                             if !nullable[*lhs as usize] {
                                 if rule.iter().all(|sym| match sym {
@@ -160,19 +162,19 @@ macro_rules! grammar {
 
         }
 
-        use _Inner::MakeSymbol;
+        use __inner::MakeSymbol;
 
-        pub fn get_grammar() -> _Inner::Grammar {
+        pub fn get_grammar() -> __inner::Grammar {
             use $Token::*;
-            use _Inner::NonTerminal::*;
+            use __inner::NonTerminal::*;
 
-            let mut __grammar = _Inner::Grammar::new();
+            let mut __grammar = __inner::Grammar::new();
             grammar!(@rules __grammar, $( $lhs = $rhs )*);
             __grammar.compute_nullable();
             __grammar
         }
 
-        pub use _Inner::{Grammar, Rule, Symbol, NonTerminal, NT_COUNT};
+        pub use __inner::{Grammar, Rule, Symbol, NonTerminal, NT_COUNT};
         pub use $Token;
     }
     )
@@ -180,8 +182,6 @@ macro_rules! grammar {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use std::collections::HashSet;
     use std::iter::FromIterator;
 
     #[derive(Debug, PartialEq, Eq)]
@@ -192,7 +192,7 @@ mod tests {
     }
 
     // Just testing if this invocation even compiles
-    grammar!(NameClash <crate::grammar::tests::Tok>:
+    grammar!(name_clash <crate::grammar::tests::Tok>:
              Symbol = [Rule]
              Rule = [NonTerminal]
              NonTerminal = [Rule]
@@ -201,17 +201,17 @@ mod tests {
              grammar = [grammar]
              get_grammar = []);
 
-    grammar!(EmptyGrammar <crate::grammar::tests::Tok>:);
+    grammar!(empty_grammar <crate::grammar::tests::Tok>:);
 
-    grammar!(TestGrammar <crate::grammar::tests::Tok>:
-             empty = []
-             stmt = [expr | ]
-             expr = [NUM | expr PLUS expr | expr MINUS expr]
+    grammar!(test_grammar <crate::grammar::tests::Tok>:
+             Empty = []
+             Stmt = [Expr | ]
+             Expr = [NUM | Expr PLUS Expr | Expr MINUS Expr]
     );
 
     #[test]
     fn empty() {
-        use EmptyGrammar::*;
+        use empty_grammar::*;
 
         let grammar = get_grammar();
 
@@ -220,66 +220,64 @@ mod tests {
 
     #[test]
     fn grammar() {
-        use TestGrammar::*;
+        use test_grammar::*;
 
         let grammar = get_grammar();
 
-        let non_terminals: HashSet<&NonTerminal> = HashSet::from_iter(grammar.iter_lhs());
-
-        let rules = Vec::from_iter(grammar.get_iter_rhs(NonTerminal::empty));
+        let rules = Vec::from_iter(grammar.get_iter_rhs(NonTerminal::Empty));
         assert_eq!(rules.len(), 0);
-        assert!(grammar.is_nullable(NonTerminal::empty));
+        assert!(grammar.is_nullable(NonTerminal::Empty));
 
-        let rules = Vec::from_iter(grammar.get_iter_rhs(NonTerminal::stmt));
+        let rules = Vec::from_iter(grammar.get_iter_rhs(NonTerminal::Stmt));
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0].len(), 1);
         assert_eq!(
             rules[0].symbol(0).unwrap(),
-            &Symbol::NonTerminal(NonTerminal::expr)
+            &Symbol::NonTerminal(NonTerminal::Expr)
         );
-        assert!(grammar.is_nullable(NonTerminal::stmt));
+        assert!(grammar.is_nullable(NonTerminal::Stmt));
 
-        let rules = Vec::from_iter(grammar.get_iter_rhs(NonTerminal::expr));
+        let rules = Vec::from_iter(grammar.get_iter_rhs(NonTerminal::Expr));
         assert_eq!(rules.len(), 3);
         let rules = Vec::from_iter(rules.iter().map(|rule| Vec::from_iter(rule.iter())));
         assert_eq!(rules[0], vec![&Symbol::Terminal(Tok::NUM)]);
         assert_eq!(
             rules[1],
             vec![
-                &Symbol::NonTerminal(NonTerminal::expr),
+                &Symbol::NonTerminal(NonTerminal::Expr),
                 &Symbol::Terminal(Tok::PLUS),
-                &Symbol::NonTerminal(NonTerminal::expr),
+                &Symbol::NonTerminal(NonTerminal::Expr),
             ]
         );
         assert_eq!(
             rules[2],
             vec![
-                &Symbol::NonTerminal(NonTerminal::expr),
+                &Symbol::NonTerminal(NonTerminal::Expr),
                 &Symbol::Terminal(Tok::MINUS),
-                &Symbol::NonTerminal(NonTerminal::expr),
+                &Symbol::NonTerminal(NonTerminal::Expr),
             ]
         );
     }
 
-    grammar!(NullableGrammar <crate::grammar::tests::Tok>:
-             a = []
-             b = [a]
-             c = [b a | NUM]
-             d = [PLUS | c NUM b]
-             e = [c d]
-             f = [a b c | e]);
+    grammar!(nullable_grammar <crate::grammar::tests::Tok>:
+             A = []
+             B = [A]
+             C = [B A | NUM]
+             D = [PLUS | C NUM B]
+             E = [C D]
+             F = [A B C | E]);
 
     #[test]
     fn nullable() {
-        use NullableGrammar::*;
+        use nullable_grammar::*;
 
         let grammar = get_grammar();
 
-        assert!(grammar.is_nullable(NonTerminal::a));
-        assert!(grammar.is_nullable(NonTerminal::b));
-        assert!(grammar.is_nullable(NonTerminal::c));
-        assert!(!grammar.is_nullable(NonTerminal::d));
-        assert!(!grammar.is_nullable(NonTerminal::e));
-        assert!(grammar.is_nullable(NonTerminal::f));
+        assert!(grammar.is_nullable(NonTerminal::A));
+        assert!(grammar.is_nullable(NonTerminal::B));
+        assert!(grammar.is_nullable(NonTerminal::C));
+        assert!(!grammar.is_nullable(NonTerminal::D));
+        assert!(!grammar.is_nullable(NonTerminal::E));
+        assert!(grammar.is_nullable(NonTerminal::F));
     }
 }

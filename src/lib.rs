@@ -1,14 +1,11 @@
 #[macro_use]
 mod grammar;
-use grammar::*;
 
 macro_rules! parser {
     ( $name:ident <$grammar_mod:path> ) => {
+        #[allow(unused)]
         mod $name {
             use $grammar_mod::*;
-
-            use std::collections::HashMap;
-            use std::hash::Hash;
 
             #[derive(Debug)]
             struct Item<'a> {
@@ -247,71 +244,72 @@ mod tests {
         RB,
     }
 
-    grammar!(TestGrammar <crate::tests::Token>:
-             expr = [NUM |
-                     expr PLUS expr |
-                     expr MINUS expr |
-                     LB expr RB]
+    grammar!(test_grammar <crate::tests::Token>:
+             Expr = [NUM |
+                     Expr PLUS Expr |
+                     Expr MINUS Expr |
+                     LB Expr RB]
     );
 
-    parser!(TestParser<crate::tests::TestGrammar>);
+    parser!(test_parser<crate::tests::test_grammar>);
+
+    macro_rules! parse_tokens {
+        ( $parser:ident, $tokens:expr ) => {
+            for token in $tokens.iter() {
+                $parser = $parser.parse_token(*token).unwrap();
+            }
+        };
+    }
 
     #[test]
     fn basic() {
-        use TestGrammar::*;
-        use TestParser::*;
+        use test_grammar::*;
+        use test_parser::*;
+        use Token::*;
 
         let grammar = get_grammar();
-        let mut parser = Parser::new(&grammar, NonTerminal::expr);
+        let mut parser = Parser::new(&grammar, NonTerminal::Expr);
 
-        parser = parser.parse_token(Token::NUM).unwrap();
-        parser = parser.parse_token(Token::PLUS).unwrap();
-        parser = parser.parse_token(Token::NUM).unwrap();
+        parse_tokens!(parser, [NUM, PLUS, NUM]);
         parser.finish_parse().unwrap();
     }
 
     #[test]
     fn nested() {
-        use TestGrammar::*;
-        use TestParser::*;
+        use test_grammar::*;
+        use test_parser::*;
         use Token::*;
 
         let grammar = get_grammar();
-        let mut parser = Parser::new(&grammar, NonTerminal::expr);
+        let mut parser = Parser::new(&grammar, NonTerminal::Expr);
 
-        for tok in [NUM, PLUS, LB, NUM, MINUS, NUM, RB].iter() {
-            parser = parser.parse_token(*tok).unwrap();
-        }
+        parse_tokens!(parser, [NUM, PLUS, LB, NUM, MINUS, NUM, RB]);
         parser.finish_parse().unwrap();
     }
 
     #[test]
     fn token_error() {
-        use TestGrammar::*;
-        use TestParser::*;
+        use test_grammar::*;
+        use test_parser::*;
         use Token::*;
 
         let grammar = get_grammar();
-        let mut parser = Parser::new(&grammar, NonTerminal::expr);
+        let mut parser = Parser::new(&grammar, NonTerminal::Expr);
 
-        for tok in [LB, LB, NUM, RB, RB].iter() {
-            parser = parser.parse_token(*tok).unwrap();
-        }
+        parse_tokens!(parser, [LB, LB, NUM, RB, RB]);
         assert!(parser.parse_token(RB).unwrap_err() == UnexpectedToken(RB));
     }
 
     #[test]
     fn end_error() {
-        use TestGrammar::*;
-        use TestParser::*;
+        use test_grammar::*;
+        use test_parser::*;
         use Token::*;
 
         let grammar = get_grammar();
-        let mut parser = Parser::new(&grammar, NonTerminal::expr);
+        let mut parser = Parser::new(&grammar, NonTerminal::Expr);
 
-        for tok in [LB, LB, NUM].iter() {
-            parser = parser.parse_token(*tok).unwrap();
-        }
+        parse_tokens!(parser, [LB, LB, NUM]);
         parser.finish_parse().unwrap_err();
     }
 }
