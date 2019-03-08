@@ -97,12 +97,8 @@ macro_rules! parser {
             }
 
             #[derive(PartialEq, Debug)]
-            // Encountered token that does not match any available subparses
-            pub struct UnexpectedToken(pub Token);
-
-            #[derive(Debug)]
-            // Parse ended when there's still tokens left to be matched
-            pub struct UnexpectedEnd;
+            // Unexpected token or end of parse encountered
+            pub struct SyntaxError;
 
             #[derive(Debug, Clone)]
             pub struct Parser<'a> {
@@ -210,15 +206,15 @@ macro_rules! parser {
                     }
                 }
 
-                pub fn parse_token(mut self, token: Token) -> Result<Self, UnexpectedToken> {
+                pub fn parse_token(mut self, token: Token) -> Result<Self, SyntaxError> {
                     if self.parse_set(Some(token)) {
                         Ok(self)
                     } else {
-                        Err(UnexpectedToken(token))
+                        Err(SyntaxError)
                     }
                 }
 
-                pub fn finish_parse(mut self) -> Result<(), UnexpectedEnd> {
+                pub fn finish_parse(mut self) -> Result<(), SyntaxError> {
                     let continued = self.parse_set(None);
                     assert!(!continued);
 
@@ -230,7 +226,7 @@ macro_rules! parser {
                     {
                         Ok(())
                     } else {
-                        Err(UnexpectedEnd)
+                        Err(SyntaxError)
                     }
                 }
             }
@@ -304,7 +300,7 @@ mod tests {
         let mut parser = Parser::new(&grammar, NonTerminal::Expr);
 
         parse_tokens!(parser, [LB, LB, NUM, RB, RB]);
-        assert!(parser.parse_token(RB).unwrap_err() == UnexpectedToken(RB));
+        parser.parse_token(RB).unwrap_err();
     }
 
     #[test]
