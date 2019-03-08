@@ -5,7 +5,15 @@ macro_rules! grammar {
     ( @rules $grammar:ident, $lhs:ident = [ $($rhs:tt)* ]
       $( $tail:tt )* ) => (
         grammar!(@rhs $grammar, $lhs, $($rhs)*);
-        grammar!(@rules $grammar, $($tail)*)
+        // Detects recursive grammars with no base case and aborts if found
+        assert!($grammar.is_nullable($lhs) || $grammar.get_iter_rhs($lhs).map(|rule|
+            rule.iter().all(|sym| match sym {
+                __inner::Symbol::Terminal(_) => true,
+                __inner::Symbol::NonTerminal(nt) => *nt != $lhs,
+            })
+        ).any(|b| b));
+
+        grammar!(@rules $grammar, $($tail)*);
     );
 
     ( @rhs $grammar:ident, $lhs:ident, ) => (
