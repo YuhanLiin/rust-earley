@@ -40,10 +40,6 @@ macro_rules! parser {
                         ..*self
                     }
                 }
-
-                fn clone(&self) -> Self {
-                    Item { ..*self }
-                }
             }
 
             #[derive(Debug, Clone)]
