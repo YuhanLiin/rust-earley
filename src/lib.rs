@@ -424,4 +424,29 @@ mod tests {
         let parser = original_parser.clone();
         parser.parse_token(PLUS).unwrap_err();
     }
+
+    grammar!(rec_grammar <crate::tests::Token>:
+             Start = [ Right | Mid ]
+             Right = [ NUM Right | ]
+             Mid = [ LB Mid RB | LB Mid | PLUS ]);
+
+    parser!(rec_parser<crate::tests::rec_grammar>);
+
+    #[test]
+    fn rec_leo_parse() {
+        use rec_grammar::*;
+        use rec_parser::*;
+        use Token::*;
+
+        let grammar = get_grammar();
+        let original_parser = Parser::new(&grammar, NonTerminal::Start);
+
+        let mut parser = original_parser.clone();
+        parse_tokens!(parser, [NUM, NUM, NUM, NUM, NUM, NUM, NUM]);
+        parser.finish_parse().unwrap();
+
+        let mut parser = original_parser.clone();
+        parse_tokens!(parser, [LB, LB, LB, PLUS, RB]);
+        parser.finish_parse().unwrap();
+    }
 }
