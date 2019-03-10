@@ -48,7 +48,9 @@ macro_rules! parser {
 
             #[derive(Debug, Clone)]
             struct Chart<'a> {
+                // Earley Items
                 items: Vec<Item<'a>>,
+                // Starting indices of each state set in the items vector
                 boundaries: Vec<usize>,
             }
 
@@ -78,12 +80,32 @@ macro_rules! parser {
                     let end = self.boundaries.get(i + 1).unwrap_or_else(|| &len);
                     &self.items[start..*end]
                 }
+            }
 
-                fn get_mut(&mut self, i: usize) -> &mut [Item<'a>] {
-                    let len = self.items.len();
-                    let start = self.boundaries[i];
-                    let end = self.boundaries.get(i + 1).unwrap_or_else(|| &len);
-                    &mut self.items[start..*end]
+            // Mapping between postdot symbols and items for each state set
+            // Used during completion
+            #[derive(Clone, Debug)]
+            struct PostDot(Vec<[Vec<usize>; NT_COUNT]>);
+
+            impl PostDot {
+                fn new() -> Self {
+                    PostDot(vec![])
+                }
+
+                fn push_set(&mut self) {
+                    self.0.push(Default::default());
+                }
+
+                fn push_idx(&mut self, non_term: NonTerminal, idx: usize) {
+                    self.0.last_mut().unwrap()[non_term as usize].push(idx);
+                }
+
+                fn iter_idx(
+                    &self,
+                    i: usize,
+                    non_term: NonTerminal,
+                ) -> impl Iterator<Item = &usize> {
+                    self.0[i][non_term as usize].iter()
                 }
             }
 
@@ -95,6 +117,7 @@ macro_rules! parser {
             pub struct Parser<'a> {
                 grammar: &'a Grammar,
                 chart: Chart<'a>,
+                postdot: PostDot,
                 progress: usize,
                 start_symbol: NonTerminal,
             }
@@ -103,12 +126,14 @@ macro_rules! parser {
                 pub fn new(grammar: &'a Grammar, start_symbol: NonTerminal) -> Self {
                     let mut parser = Self {
                         chart: Chart::new(),
+                        postdot: PostDot::new(),
                         grammar,
                         progress: 0,
                         start_symbol,
                     };
 
                     parser.chart.push_set();
+                    parser.postdot.push_set();
                     parser
                 }
 
@@ -138,15 +163,9 @@ macro_rules! parser {
                         return;
                     }
 
-                    for i in 0..self.chart.get(from).len() {
-                        if let Some(sym) = self.chart.get(from)[i].dot_symbol() {
-                            if let Symbol::NonTerminal(nt) = sym {
-                                if nt == &item.lhs {
-                                    let new_item = self.chart.get(from)[i].advance();
-                                    self.chart.push_item(new_item);
-                                }
-                            }
-                        }
+                    for idx in self.postdot.iter_idx(from, item.lhs) {
+                        let new_item = self.chart.get(from)[*idx].advance();
+                        self.chart.push_item(new_item);
                     }
                 }
 
@@ -165,6 +184,7 @@ macro_rules! parser {
                         if let Some(symbol) = item.dot_symbol() {
                             match symbol {
                                 Symbol::NonTerminal(nt) => {
+                                    self.postdot.push_idx(*nt, i);
                                     self.advance_empty(*nt, &item);
                                     self.predict(*nt, &mut has_predicted);
                                 }
@@ -193,6 +213,7 @@ macro_rules! parser {
 
                 fn scan_pass(&mut self, scan_idx: &Vec<usize>) {
                     self.chart.push_set();
+                    self.postdot.push_set();
                     for i in scan_idx {
                         let item = &self.chart.get(self.progress)[*i];
                         self.chart.push_item(item.advance());
