@@ -166,8 +166,8 @@ macro_rules! parser {
                 }
 
                 fn parse_set(&mut self, token: Option<Token>) -> bool {
-                    let mut next_set = StateSet::new();
                     let mut has_predicted = [false; NT_COUNT];
+                    let mut scan_idx = Vec::new();
 
                     if self.progress == 0 {
                         self.predict(self.start_symbol, &mut has_predicted);
@@ -186,7 +186,7 @@ macro_rules! parser {
                                 Symbol::Terminal(t) => {
                                     token.map(|tok| {
                                         if *t == tok {
-                                            self.scan(&item, &mut next_set);
+                                            scan_idx.push(i);
                                         }
                                     });
                                 }
@@ -197,13 +197,22 @@ macro_rules! parser {
                         i += 1;
                     }
 
-                    if next_set.len() == 0 {
+                    if scan_idx.len() == 0 {
                         false
                     } else {
-                        self.chart.push(next_set);
+                        self.scan_pass(&scan_idx);
                         self.progress += 1;
                         true
                     }
+                }
+
+                fn scan_pass(&mut self, scan_idx: &Vec<usize>) {
+                    let mut next_set = StateSet::new();
+                    for i in scan_idx {
+                        let item = self.chart.get(self.progress).get(*i);
+                        self.scan(&item, &mut next_set);
+                    }
+                    self.chart.push(next_set);
                 }
 
                 pub fn parse_token(mut self, token: Token) -> Result<Self, SyntaxError> {
