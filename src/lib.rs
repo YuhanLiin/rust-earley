@@ -47,52 +47,43 @@ macro_rules! parser {
             }
 
             #[derive(Debug, Clone)]
-            struct StateSet<'a>(Vec<Item<'a>>);
-
-            impl<'a> StateSet<'a> {
-                fn new() -> Self {
-                    StateSet(Vec::new())
-                }
-
-                fn push(&mut self, item: Item<'a>) {
-                    self.0.push(item);
-                }
-
-                fn iter(&self) -> impl Iterator<Item = &Item<'a>> {
-                    self.0.iter()
-                }
-
-                fn get(&self, i: usize) -> &Item<'a> {
-                    &self.0[i]
-                }
-
-                fn len(&self) -> usize {
-                    self.0.len()
-                }
+            struct Chart<'a> {
+                items: Vec<Item<'a>>,
+                boundaries: Vec<usize>,
             }
-
-            #[derive(Debug, Clone)]
-            struct Chart<'a>(Vec<StateSet<'a>>);
 
             impl<'a> Chart<'a> {
                 fn new() -> Self {
-                    Chart(Vec::new())
+                    Chart {
+                        items: vec![],
+                        boundaries: vec![],
+                    }
                 }
 
                 fn len(&self) -> usize {
-                    self.0.len()
+                    self.boundaries.len()
                 }
 
-                fn push(&mut self, set: StateSet<'a>) {
-                    self.0.push(set);
+                fn push_set(&mut self) {
+                    self.boundaries.push(self.items.len());
                 }
 
-                fn get(&self, i: usize) -> &StateSet<'a> {
-                    &self.0[i]
+                fn push_item(&mut self, item: Item<'a>) {
+                    self.items.push(item);
                 }
 
-                fn get_mut(&mut self, i: usize) -> &mut StateSet<'a> {
-                    &mut self.0[i]
+                fn get(&self, i: usize) -> &[Item<'a>] {
+                    let len = self.items.len();
+                    let start = self.boundaries[i];
+                    let end = self.boundaries.get(i + 1).unwrap_or_else(|| &len);
+                    &self.items[start..*end]
+                }
+
+                fn get_mut(&mut self, i: usize) -> &mut [Item<'a>] {
+                    let len = self.items.len();
+                    let start = self.boundaries[i];
+                    let end = self.boundaries.get(i + 1).unwrap_or_else(|| &len);
+                    &mut self.items[start..*end]
                 }
             }
 
@@ -117,7 +108,7 @@ macro_rules! parser {
                         start_symbol,
                     };
 
-                    parser.chart.push(StateSet::new());
+                    parser.chart.push_set();
                     parser
                 }
 
@@ -126,21 +117,15 @@ macro_rules! parser {
                         has_predicted[non_term as usize] = true;
                         let progress = self.progress;
                         for rule in self.grammar.get_iter_rhs(non_term) {
-                            self.chart
-                                .get_mut(progress)
-                                .push(Item::new(non_term, rule, progress));
+                            self.chart.push_item(Item::new(non_term, rule, progress));
                         }
                     }
                 }
 
                 fn advance_empty(&mut self, non_term: NonTerminal, item: &Item<'a>) {
                     if self.grammar.is_nullable(non_term) {
-                        self.chart.get_mut(self.progress).push(Item::advance(item));
+                        self.chart.push_item(Item::advance(item));
                     }
-                }
-
-                fn scan(&self, item: &Item<'a>, next_set: &mut StateSet<'a>) {
-                    next_set.push(item.advance());
                 }
 
                 fn complete(&mut self, item: &Item<'a>) {
@@ -154,11 +139,11 @@ macro_rules! parser {
                     }
 
                     for i in 0..self.chart.get(from).len() {
-                        if let Some(sym) = self.chart.get(from).get(i).dot_symbol() {
+                        if let Some(sym) = self.chart.get(from)[i].dot_symbol() {
                             if let Symbol::NonTerminal(nt) = sym {
                                 if nt == &item.lhs {
-                                    let new_item = self.chart.get(from).get(i).advance();
-                                    self.chart.get_mut(self.progress).push(new_item);
+                                    let new_item = self.chart.get(from)[i].advance();
+                                    self.chart.push_item(new_item);
                                 }
                             }
                         }
@@ -175,7 +160,7 @@ macro_rules! parser {
 
                     let mut i = 0;
                     while i < self.chart.get(self.progress).len() {
-                        let item = self.chart.get(self.progress).get(i).clone();
+                        let item = self.chart.get(self.progress)[i].clone();
 
                         if let Some(symbol) = item.dot_symbol() {
                             match symbol {
@@ -207,12 +192,11 @@ macro_rules! parser {
                 }
 
                 fn scan_pass(&mut self, scan_idx: &Vec<usize>) {
-                    let mut next_set = StateSet::new();
+                    self.chart.push_set();
                     for i in scan_idx {
-                        let item = self.chart.get(self.progress).get(*i);
-                        self.scan(&item, &mut next_set);
+                        let item = &self.chart.get(self.progress)[*i];
+                        self.chart.push_item(item.advance());
                     }
-                    self.chart.push(next_set);
                 }
 
                 pub fn parse_token(mut self, token: Token) -> Result<Self, SyntaxError> {
