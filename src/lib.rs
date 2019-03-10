@@ -40,6 +40,10 @@ macro_rules! parser {
                         ..*self
                     }
                 }
+
+                fn is_at_last(&self) -> bool {
+                    self.dot == self.rule.len() - 1
+                }
             }
 
             #[derive(Debug, Clone)]
@@ -105,6 +109,29 @@ macro_rules! parser {
                 }
             }
 
+            #[derive(Clone, Debug)]
+            struct LeoItems<'a>(Vec<[Option<Item<'a>>; NT_COUNT]>);
+
+            impl<'a> LeoItems<'a> {
+                fn new() -> Self {
+                    LeoItems(vec![])
+                }
+
+                fn push_set(&mut self) {
+                    self.0.push(Default::default());
+                }
+
+                fn set_leo(&mut self, non_term: NonTerminal, item: Item<'a>) {
+                    assert!(item.is_at_last());
+                    let arr = self.0.last_mut().unwrap();
+                    arr[non_term as usize] = Some(item);
+                }
+
+                fn get_leo(&self, from: usize, non_term: NonTerminal) -> Option<&Item<'a>> {
+                    self.0[from][non_term as usize].as_ref()
+                }
+            }
+
             #[derive(PartialEq, Debug)]
             // Unexpected token or end of parse encountered
             pub struct SyntaxError;
@@ -114,6 +141,7 @@ macro_rules! parser {
                 grammar: &'a Grammar,
                 chart: Chart<'a>,
                 postdot: PostDot,
+                leo: LeoItems<'a>,
                 progress: usize,
                 start_symbol: NonTerminal,
             }
@@ -123,14 +151,20 @@ macro_rules! parser {
                     let mut parser = Self {
                         chart: Chart::new(),
                         postdot: PostDot::new(),
+                        leo: LeoItems::new(),
                         grammar,
                         progress: 0,
                         start_symbol,
                     };
 
-                    parser.chart.push_set();
-                    parser.postdot.push_set();
+                    parser.push_set();
                     parser
+                }
+
+                fn push_set(&mut self) {
+                    self.chart.push_set();
+                    self.postdot.push_set();
+                    self.leo.push_set();
                 }
 
                 fn predict(&mut self, non_term: NonTerminal, has_predicted: &mut [bool]) {
@@ -159,9 +193,20 @@ macro_rules! parser {
                         return;
                     }
 
+                    // If a Leo Item is available, complete it and add it to the set
+                    let found_leo = if let Some(complete_item) = self.leo.get_leo(from, item.lhs) {
+                        assert!(complete_item.is_at_last());
+                        self.chart.push_item(complete_item.advance());
+                        true
+                    } else {
+                        false
+                    };
+
                     for idx in self.postdot.iter_idx(from, item.lhs) {
-                        let new_item = self.chart.get(from)[*idx].advance();
-                        self.chart.push_item(new_item);
+                        let old_item = &self.chart.get(from)[*idx];
+                        if !found_leo || !old_item.is_at_last() {
+                            self.chart.push_item(old_item.advance());
+                        }
                     }
                 }
 
@@ -201,15 +246,42 @@ macro_rules! parser {
                     if scan_idx.len() == 0 {
                         false
                     } else {
+                        self.leo_item_pass();
                         self.scan_pass(&scan_idx);
                         self.progress += 1;
                         true
                     }
                 }
 
+                fn leo_item_pass(&mut self) {
+                    for lhs in self.grammar.iter_lhs() {
+                        let (postdot, progress, chart) =
+                            (&self.postdot, &self.progress, &self.chart);
+                        let iter = || {
+                            postdot
+                                .iter_idx(*progress, *lhs)
+                                .map(|i| &chart.get(*progress)[*i])
+                                .filter(|item| item.is_at_last())
+                        };
+
+                        // If there's only one item of the form A -> xyz . B, create Leo item for B
+                        if iter().count() == 1 {
+                            let item = iter().next().unwrap();
+
+                            let item = if let Some(leo_item) = self.leo.get_leo(item.from, item.lhs)
+                            {
+                                leo_item.clone()
+                            } else {
+                                item.clone()
+                            };
+
+                            self.leo.set_leo(*lhs, item);
+                        }
+                    }
+                }
+
                 fn scan_pass(&mut self, scan_idx: &Vec<usize>) {
-                    self.chart.push_set();
-                    self.postdot.push_set();
+                    self.push_set();
                     for i in scan_idx {
                         let item = &self.chart.get(self.progress)[*i];
                         self.chart.push_item(item.advance());
