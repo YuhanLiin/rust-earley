@@ -139,6 +139,7 @@ macro_rules! parser {
             #[derive(Debug, Clone)]
             pub struct Parser<'a> {
                 grammar: &'a Grammar,
+                tokens: Vec<Token>,
                 chart: Chart<'a>,
                 postdot: PostDot,
                 leo: LeoItems<'a>,
@@ -150,6 +151,7 @@ macro_rules! parser {
                 pub fn new(grammar: &'a Grammar, start_symbol: NonTerminal) -> Self {
                     let mut parser = Self {
                         chart: Chart::new(),
+                        tokens: vec![],
                         postdot: PostDot::new(),
                         leo: LeoItems::new(),
                         grammar,
@@ -243,10 +245,12 @@ macro_rules! parser {
                         i += 1;
                     }
 
+                    self.leo_item_pass();
+
                     if scan_idx.len() == 0 {
                         false
                     } else {
-                        self.leo_item_pass();
+                        self.tokens.push(token.unwrap());
                         self.scan_pass(&scan_idx);
                         self.progress += 1;
                         true
@@ -296,7 +300,7 @@ macro_rules! parser {
                     }
                 }
 
-                pub fn finish_parse(mut self) -> Result<(), SyntaxError> {
+                pub fn finish_parse(mut self) -> Result<EarleyResult<'a>, SyntaxError> {
                     let continued = self.parse_set(None);
                     assert!(!continued);
 
@@ -306,9 +310,91 @@ macro_rules! parser {
                         .iter()
                         .any(|item| item.done() && item.from == 0 && item.lhs == self.start_symbol)
                     {
-                        Ok(())
+                        Ok(EarleyResult(self))
                     } else {
                         Err(SyntaxError)
+                    }
+                }
+            }
+
+            #[derive(Debug, Clone)]
+            pub struct EarleyResult<'a>(Parser<'a>);
+
+            impl<'a> EarleyResult<'a> {
+                fn search_subitems(
+                    &self,
+                    item: &Item<'a>,
+                    chart_idx: usize,
+                    rule_idx: usize,
+                ) -> Option<Vec<&Item<'a>>> {
+                    let symbol = item.rule.symbol(rule_idx).unwrap();
+
+                    match symbol {
+                        Symbol::NonTerminal(nt) => {
+                            // Loop thru each completed item in current state set that completes
+                            // our target nonterminal symbol. Returns on the first match.
+                            for completed in self
+                                .0
+                                .chart
+                                .get(chart_idx)
+                                .iter()
+                                .filter(|item| item.lhs == *nt && item.done())
+                            {
+                                if rule_idx == 0 {
+                                    // If we're at the first symbol of the rule, check if the
+                                    // completed nonterminal is from the same state set as the rule
+                                    if completed.from == item.from {
+                                        let mut list = Vec::with_capacity(item.rule.len());
+                                        list.push(completed);
+                                        return Some(list);
+                                    }
+                                } else {
+                                    // Recursively search for the next symbol in the rule. If a
+                                    // sequence is found, add the completed item to it and return it.
+                                    let mut result =
+                                        self.search_subitems(item, completed.from, rule_idx - 1);
+                                    if let Some(mut list) = result {
+                                        list.push(completed);
+                                        return Some(list);
+                                    }
+                                };
+                            }
+                        }
+                        Symbol::Terminal(t) => {
+                            // chart_idx > 0, since a scan can never end at state set 0
+                            let token = self.0.tokens[chart_idx - 1];
+
+                            if token == *t {
+                                if rule_idx == 0 {
+                                    return Some(Vec::with_capacity(item.rule.len()));
+                                } else {
+                                    return self.search_subitems(item, chart_idx - 1, rule_idx - 1);
+                                }
+                            }
+                        }
+                    }
+
+                    return None;
+                }
+
+                fn semantic_actions(&self, finished_item: &Item<'a>, end_idx: usize) {
+                    let sub_items = self
+                        .search_subitems(finished_item, end_idx, finished_item.rule.len())
+                        .unwrap();
+                    let mut sub_items = sub_items.iter().peekable();
+
+                    for sym in finished_item.rule.iter() {
+                        match sym {
+                            Symbol::NonTerminal(nt) => {
+                                let item = sub_items.next().unwrap();
+                                let end =
+                                    sub_items.peek().map(|i| i.from).unwrap_or_else(|| end_idx);
+                                self.semantic_actions(item, end);
+                            }
+                            Symbol::Terminal(t) => {
+                                // TODO do something to token
+                            }
+                        }
                     }
                 }
             }

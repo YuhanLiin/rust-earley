@@ -79,7 +79,7 @@ macro_rules! grammar {
             pub struct Rule(Vec<Symbol>);
 
             impl Rule {
-                pub fn iter(&self) -> impl Iterator<Item=&Symbol> {
+                pub fn iter(&self) -> impl DoubleEndedIterator<Item=&Symbol> {
                     self.0.iter()
                 }
 
