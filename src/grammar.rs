@@ -5,7 +5,7 @@ macro_rules! grammar {
     ( @rules $grammar:ident, $lhs:ident = [ $($rhs:tt)* ]
       $( $tail:tt )* ) => (
         grammar!(@rhs $grammar, $lhs, $($rhs)*);
-        //
+
         // Detects recursive grammars with no base case and aborts if found
         assert!($grammar.is_nullable($lhs) ||
                 $grammar.get_iter_rhs($lhs).map(|rule|
@@ -114,11 +114,15 @@ macro_rules! grammar {
                 pub(super) fn compute_nullable(&mut self) {
                     let mut rhs_mapping: [Vec<(NonTerminal, &Rule)>; NT_COUNT] = Default::default();
 
-                    let rules = self.iter_lhs().map(|l| *l).filter(|lhs| !self.is_nullable(*lhs)).flat_map(|lhs| {
-                        iter::repeat(lhs).zip(self.get_iter_rhs(lhs))
-                    });
+                    let rules = &self.rules;
+                    let rules_for_lhs = |lhs| rules.get(&lhs).into_iter().flat_map(|vec| vec.iter());
+                    let rules_iter = self.iter_lhs()
+                                         .map(|l| *l)
+                                         .filter(|lhs| !self.is_nullable(*lhs))
+                                         .map(|lhs| iter::repeat(lhs).zip(rules_for_lhs(lhs)))
+                                         .flatten();
 
-                    for (lhs, rule) in rules {
+                    for (lhs, rule) in rules_iter {
                         for sym in rule.iter() {
                             if let Symbol::NonTerminal(nt) = sym {
                                 rhs_mapping[*nt as usize].push((lhs, rule));
@@ -131,25 +135,22 @@ macro_rules! grammar {
                     let mut work_symbols = self.iter_lhs().map(|l| *l)
                                                        .filter(|l| self.is_nullable(*l))
                                                        .collect::<Vec<NonTerminal>>();
-                    let mut nullable = self.nullable.clone();
 
                     while !work_symbols.is_empty() {
                         let sym = work_symbols.pop().unwrap();
 
                         for (lhs, rule) in rhs_mapping[sym as usize].iter() {
-                            if !nullable[*lhs as usize] {
+                            if !self.is_nullable(*lhs) {
                                 if rule.iter().all(|sym| match sym {
-                                    Symbol::NonTerminal(nt) => nullable[*nt as usize],
+                                    Symbol::NonTerminal(nt) => self.is_nullable(*nt),
                                     _ => false
                                 }) {
-                                    nullable[*lhs as usize] = true;
+                                    self.nullable[*lhs as usize] = true;
                                     work_symbols.push(*lhs);
                                 }
                             }
                         }
                     }
-
-                    self.nullable = nullable.clone();
                 }
 
                 pub fn get_iter_rhs(
