@@ -89,22 +89,39 @@ macro_rules! grammar {
             }
 
             #[derive(Debug)]
+            struct GrammarRules(HashMap<NonTerminal, Vec<Rule>>);
+
+            impl GrammarRules {
+                fn add_rule(&mut self, lhs: NonTerminal, rhs: Vec<Symbol>) {
+                    let prod_rules = self.0.entry(lhs).or_insert(Vec::new());
+                    prod_rules.push(Rule(rhs));
+                }
+
+                fn get_iter_rhs(
+                    &self,
+                    lhs: NonTerminal
+                ) -> impl Iterator<Item=&Rule>
+                {
+                    self.0.get(&lhs).into_iter().flat_map(|vec| vec.iter())
+                }
+            }
+
+            #[derive(Debug)]
             pub struct Grammar {
-                rules: HashMap<NonTerminal, Vec<Rule>>,
+                rules: GrammarRules,
                 nullable: [bool; NT_COUNT],
             }
 
             impl Grammar {
                 pub(super) fn new() -> Self {
                     Grammar {
-                        rules: HashMap::new(),
+                        rules: GrammarRules(HashMap::new()),
                         nullable: [false; NT_COUNT],
                     }
                 }
 
                 pub(super) fn add_rule(&mut self, lhs: NonTerminal, rhs: Vec<Symbol>) {
-                    let prod_rules = self.rules.entry(lhs).or_insert(Vec::new());
-                    prod_rules.push(Rule(rhs));
+                    self.rules.add_rule(lhs, rhs);
                 }
 
                 pub(super) fn set_nullable(&mut self, sym: NonTerminal) {
@@ -115,12 +132,10 @@ macro_rules! grammar {
                     let mut rhs_mapping: [Vec<(NonTerminal, &Rule)>; NT_COUNT] = Default::default();
 
                     let rules = &self.rules;
-                    let rules_for_lhs = |lhs| rules.get(&lhs).into_iter().flat_map(|vec| vec.iter());
                     let rules_iter = self.iter_lhs()
                                          .map(|l| *l)
                                          .filter(|lhs| !self.is_nullable(*lhs))
-                                         .map(|lhs| iter::repeat(lhs).zip(rules_for_lhs(lhs)))
-                                         .flatten();
+                                         .flat_map(|lhs| iter::repeat(lhs).zip(rules.get_iter_rhs(lhs)));
 
                     for (lhs, rule) in rules_iter {
                         for sym in rule.iter() {
@@ -158,7 +173,7 @@ macro_rules! grammar {
                     lhs: NonTerminal
                 ) -> impl Iterator<Item=&Rule>
                 {
-                    self.rules.get(&lhs).into_iter().flat_map(|vec| vec.iter())
+                    self.rules.get_iter_rhs(lhs)
                 }
 
                 pub fn iter_lhs(&self) -> impl Iterator<Item=&NonTerminal> {
