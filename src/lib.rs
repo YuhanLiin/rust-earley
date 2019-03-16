@@ -485,9 +485,10 @@ mod tests {
     }
 
     grammar!(nullable_grammar <crate::tests::Token>:
-             A = [ B | ]
-             B = [ A B | A ]
-             C = [ B | C NUM ]);
+             A = [ | NUM ]
+             B = [ D B | A ]
+             C = [ B | C NUM ]
+             D = [ PLUS ]);
 
     parser!(nullable_parser<crate::tests::nullable_grammar>);
 
@@ -499,6 +500,9 @@ mod tests {
 
         let grammar = get_grammar();
         let original_parser = Parser::new(&grammar, NonTerminal::C);
+        println!("{:?}", grammar.is_nullable(NonTerminal::C));
+        println!("{:?}", grammar.is_nullable(NonTerminal::B));
+        println!("{:?}", grammar.is_nullable(NonTerminal::A));
 
         let parser = original_parser.clone();
         parser.finish_parse().unwrap();
@@ -508,7 +512,10 @@ mod tests {
         parser.finish_parse().unwrap();
 
         let parser = original_parser.clone();
-        parser.parse_token(PLUS).unwrap_err();
+        parser.parse_token(PLUS).unwrap();
+
+        let parser = original_parser.clone();
+        parser.parse_token(MINUS).unwrap_err();
     }
 
     grammar!(rec_grammar <crate::tests::Token>:

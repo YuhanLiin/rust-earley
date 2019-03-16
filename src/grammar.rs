@@ -5,25 +5,19 @@ macro_rules! grammar {
     ( @rules $grammar:ident, $lhs:ident = [ $($rhs:tt)* ]
       $( $tail:tt )* ) => (
         grammar!(@rhs $grammar, $lhs, $($rhs)*);
-
-        // Detects recursive grammars with no base case and aborts if found
-        assert!($grammar.is_nullable($lhs) ||
-                $grammar.get_iter_rhs($lhs).map(|rule|
-                    rule.iter().all(|sym| match sym {
-                        __inner::Symbol::Terminal(_) => true,
-                        __inner::Symbol::NonTerminal(nt) => *nt != $lhs,
-                    })
-                ).any(|b| b));
-
         grammar!(@rules $grammar, $($tail)*);
     );
 
-    ( @rhs $grammar:ident, $lhs:ident, ) => (
+    ( @rhs_rule $grammar:ident, $lhs:ident, ) => (
         $grammar.set_nullable($lhs);
     );
 
-    ( @rhs $grammar:ident, $lhs:ident, $($symbol:ident)* $( | $($tail:tt)* )? ) => (
+    ( @rhs_rule $grammar:ident, $lhs:ident, $($symbol:ident)+) => (
         $grammar.add_rule($lhs, vec![ $(__inner::Symbol::new($symbol)),* ]);
+    );
+
+    ( @rhs $grammar:ident, $lhs:ident, $($symbol:ident)* $( | $($tail:tt)* )? ) => (
+        grammar!(@rhs_rule $grammar, $lhs, $($symbol)*);
         grammar!(@rhs_tail $grammar, $lhs, $(| $($tail)*)?)
     );
 
@@ -59,6 +53,21 @@ macro_rules! grammar {
                 NonTerminal(NonTerminal),
             }
 
+            impl Symbol {
+                pub fn terminal(&self) -> $Token {
+                    match self {
+                        Symbol::Terminal(t) => t.clone(),
+                        _ => panic!("Expected symbol to be terminal")
+                    }
+                }
+
+                pub fn non_terminal(&self) -> NonTerminal {
+                    match self {
+                        Symbol::NonTerminal(nt) => nt.clone(),
+                        _ => panic!("Expected symbol to be nonterminal")
+                    }
+                }
+            }
             pub trait MakeSymbol<T> {
                 fn new(arg: T) -> Self;
             }
@@ -168,6 +177,81 @@ macro_rules! grammar {
                     }
                 }
 
+                pub(super) fn detect_infinite_ambiguity(&self) {
+                    let mut colours = [Colour::White; NT_COUNT];
+                    let mut iter_lhs = self.iter_lhs().cloned();
+
+                    // Continue doing DFS until there are no more White nodes left
+                    while let Some(start_symbol) =
+                        iter_lhs.by_ref()
+                        .find(|lhs| colours[*lhs as usize] == Colour::White)
+                    {
+                        let mut stack = vec![start_symbol];
+
+                        while let Some(non_term) = stack.pop() {
+                            match colours[non_term as usize] {
+                                // Nonterminal was pushed multiple times while it was still White,
+                                // so we ignore subsequent occurences
+                                Colour::Black => (),
+                                // We've explored all descendants, so colour it Black
+                                Colour::Gray => colours[non_term as usize] = Colour::Black,
+
+                                Colour::White => {
+                                    // Put the node on the current DFS path
+                                    colours[non_term as usize] = Colour::Gray;
+                                    // Add node back on so we can colour it Black later
+                                    stack.push(non_term);
+
+                                    // Get all rhs rules that have no terminal tokens
+                                    let derived = self
+                                                  .get_iter_rhs(non_term)
+                                                  .filter(|rule|
+                                                        rule.iter().all(|sym| match sym {
+                                                            Symbol::Terminal(_) => false,
+                                                            Symbol::NonTerminal(_) => true,
+                                                        })
+                                                  ).map(|rule|
+                                                        rule.iter().map(|sym| sym.non_terminal())
+                                                  );
+
+                                    let next_nodes: Vec<NonTerminal> = if self.is_nullable(non_term) {
+                                        // For nullable symbols only consider productions with no
+                                        // non-nullable symbols. Take all symbols from those rules.
+                                        derived
+                                        .filter_map(|iter| {
+                                            let vec = iter.collect::<Vec<NonTerminal>>();
+                                            if vec.iter().all(|nt| self.is_nullable(*nt)) {
+                                                Some(vec.into_iter())
+                                            } else {
+                                                None
+                                            }
+                                        })
+                                        .flatten().collect()
+                                    } else {
+                                        // For non-nullable symbols only consider productions with
+                                        // one non-nullable symbol. Take all non-nullables from
+                                        // those rules
+                                        derived.map(|iter|
+                                            iter.filter(|nt| !self.is_nullable(*nt)).collect::<Vec<NonTerminal>>())
+                                        .filter(|vec| vec.len() == 1)
+                                        .flat_map(|vec| vec.into_iter()).collect()
+                                    };
+
+                                    for nt in next_nodes {
+                                        match colours[nt as usize] {
+                                            Colour::White => stack.push(nt),
+                                            Colour::Black => (),
+                                            Colour::Gray =>
+                                                panic!("NonTerminal {:?} derives itself, thereby causing infinite ambiguity in the grammar", nt)
+                                        }
+                                    }
+                                }
+                            };
+
+                        }
+                    }
+                }
+
                 pub fn get_iter_rhs(
                     &self,
                     lhs: NonTerminal
@@ -186,6 +270,13 @@ macro_rules! grammar {
                 }
             }
 
+            // Enum for the infinite ambiguity detection algorithm (graph colouring)
+            #[derive(PartialEq, Eq, Clone, Copy)]
+            enum Colour {
+                Gray,   // Node is currently on the DFS path
+                Black,  // Node and all its descendants have been explored
+                White,  // Node is unexplored
+            }
         }
 
         use __inner::MakeSymbol;
@@ -197,6 +288,7 @@ macro_rules! grammar {
             let mut __grammar = __inner::Grammar::new();
             grammar!(@rules __grammar, $( $lhs = $rhs )*);
             __grammar.compute_nullable();
+            __grammar.detect_infinite_ambiguity();
             __grammar
         }
 
@@ -210,7 +302,7 @@ macro_rules! grammar {
 mod tests {
     use std::iter::FromIterator;
 
-    #[derive(Debug, PartialEq, Eq)]
+    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
     pub enum Tok {
         NUM,
         PLUS,
