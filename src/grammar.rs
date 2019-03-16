@@ -383,7 +383,10 @@ mod tests {
              C = [B A | NUM]
              D = [PLUS | C NUM B]
              E = [C D]
-             F = [A B C | E]);
+             F = [A B C | E]
+             G = [D | | E E]
+             H = [ | D ]
+             I = [ E | ]);
 
     #[test]
     fn nullable() {
@@ -397,5 +400,8 @@ mod tests {
         assert!(!grammar.is_nullable(NonTerminal::D));
         assert!(!grammar.is_nullable(NonTerminal::E));
         assert!(grammar.is_nullable(NonTerminal::F));
+        assert!(grammar.is_nullable(NonTerminal::G));
+        assert!(grammar.is_nullable(NonTerminal::H));
+        assert!(grammar.is_nullable(NonTerminal::I));
     }
 }
