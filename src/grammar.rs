@@ -16,7 +16,20 @@ macro_rules! grammar {
         $grammar.add_rule($lhs, vec![ $(__inner::Symbol::new($symbol)),* ]);
     );
 
-    ( @rhs $grammar:ident, $lhs:ident, $($symbol:ident)* $( | $($tail:tt)* )? ) => (
+    ( @rhs $grammar:ident, $lhs:ident, ) => (
+        compile_error!(
+            concat!(
+                file!(), ": Line ", line!(),
+                ": Nonterminal ",
+                stringify!($lhs),
+                " derives nothing, which is not allowed"))
+    );
+
+    ( @rhs $grammar:ident, $lhs:ident, $($rhs:tt)+ ) => (
+        grammar!(@rhs_rules $grammar, $lhs, $($rhs)+)
+    );
+
+    ( @rhs_rules $grammar:ident, $lhs:ident, $($symbol:ident)* $( | $($tail:tt)* )? ) => (
         grammar!(@rhs_rule $grammar, $lhs, $($symbol)*);
         grammar!(@rhs_tail $grammar, $lhs, $(| $($tail)*)?)
     );
@@ -24,7 +37,7 @@ macro_rules! grammar {
     ( @rhs_tail $grammar:ident, $lhs:ident, ) => ();
 
     ( @rhs_tail $grammar:ident, $lhs:ident, | $( $tail:tt )* ) => (
-        grammar!(@rhs $grammar, $lhs, $($tail)*)
+        grammar!(@rhs_rules $grammar, $lhs, $($tail)*)
     );
 
     ( $name:ident <$Token:path>:
@@ -317,12 +330,12 @@ mod tests {
              Tok = [Symbol]
              Grammar = [Tok]
              grammar = [grammar]
-             get_grammar = []);
+             get_grammar = [get_grammar]);
 
     grammar!(empty_grammar <crate::grammar::tests::Tok>:);
 
     grammar!(test_grammar <crate::grammar::tests::Tok>:
-             Empty = []
+             Empty = [ | NUM ]
              Stmt = [Expr | ]
              Expr = [NUM | Expr PLUS Expr | Expr MINUS Expr]
     );
@@ -343,7 +356,7 @@ mod tests {
         let grammar = get_grammar();
 
         let rules = Vec::from_iter(grammar.get_iter_rhs(NonTerminal::Empty));
-        assert_eq!(rules.len(), 0);
+        assert_eq!(rules.len(), 1);
         assert!(grammar.is_nullable(NonTerminal::Empty));
 
         let rules = Vec::from_iter(grammar.get_iter_rhs(NonTerminal::Stmt));
@@ -378,7 +391,7 @@ mod tests {
     }
 
     grammar!(nullable_grammar <crate::grammar::tests::Tok>:
-             A = []
+             A = [ | PLUS ]
              B = [A]
              C = [B A | NUM]
              D = [PLUS | C NUM B]
