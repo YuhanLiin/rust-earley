@@ -1,5 +1,5 @@
 #[macro_use]
-extern crate grammar;
+extern crate syntax;
 
 use earley::parser;
 
