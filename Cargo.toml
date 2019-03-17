@@ -5,3 +5,4 @@ authors = ["YuhanLiin <linyuhan0315@hotmail.com>"]
 edition = "2018"
 
 [dependencies]
+grammar = { path = "../grammar" }
